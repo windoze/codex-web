@@ -148,6 +148,7 @@ where
     } = invocation;
 
     let mut cmd = tokio::process::Command::new("codex");
+    cmd.current_dir(&project_root);
 
     cmd.arg("--cd")
         .arg(&project_root)
