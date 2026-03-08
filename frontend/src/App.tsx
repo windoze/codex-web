@@ -117,9 +117,16 @@ export function deriveTokenUsageFromEvents(events: ConversationEvent[]): TokenUs
   return usage;
 }
 
-function formatIsoTimestamp(ms: number): string {
-  // Deterministic, timezone-independent display (UTC).
-  return new Date(ms).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function formatLocalTimestamp(ms: number): string {
+  // Local time is more readable for a UI (matches the conversation list’s local timestamp display).
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(
+    d.getMinutes(),
+  )}:${pad2(d.getSeconds())}`;
 }
 
 export function pathBasename(path: string): string {
@@ -405,21 +412,21 @@ export function eventsToChatItems(
         out.push({
           key: `e-${e.id}`,
           role: "event",
-          text: `Start: ${formatIsoTimestamp(e.ts_ms)}`,
+          text: `Start: ${formatLocalTimestamp(e.ts_ms)}`,
           format: "splitter",
         });
       } else if (statusStr === "completed") {
         out.push({
           key: `e-${e.id}`,
           role: "event",
-          text: `Stop: ${formatIsoTimestamp(e.ts_ms)}`,
+          text: `Stop: ${formatLocalTimestamp(e.ts_ms)}`,
           format: "splitter",
         });
       } else if (statusStr === "failed" || statusStr === "aborted") {
         out.push({
           key: `e-${e.id}`,
           role: "event",
-          text: `Stop (${statusStr}): ${formatIsoTimestamp(e.ts_ms)}`,
+          text: `Stop (${statusStr}): ${formatLocalTimestamp(e.ts_ms)}`,
           format: "splitter",
         });
       }

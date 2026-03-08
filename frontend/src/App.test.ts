@@ -161,9 +161,9 @@ describe("ui helpers", () => {
     ];
     const items = eventsToChatItems(events, { showRawMessages: false });
     expect(items[0].format).toBe("splitter");
-    expect(items[0].text).toContain("Start:");
+    expect(items[0].text).toMatch(/^Start: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(items.at(-1)?.format).toBe("splitter");
-    expect(items.at(-1)?.text).toContain("Stop:");
+    expect(items.at(-1)?.text).toMatch(/^Stop: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
   it("renders run_status as raw pre text when raw is on", () => {
