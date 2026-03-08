@@ -15,23 +15,11 @@ import {
   wsBase,
 } from "./lib/api";
 
-type ChatItem = {
+export type ChatItem = {
   key: string;
   role: "user" | "assistant" | "event";
   text: string;
 };
-
-export function isRawCodexEvent(e: ConversationEvent): boolean {
-  return e.event_type === "codex_event";
-}
-
-export function filterEventsForDisplay(
-  events: ConversationEvent[],
-  opts: { showRawCodexEvents: boolean },
-): ConversationEvent[] {
-  if (opts.showRawCodexEvents) return events;
-  return events.filter((e) => !isRawCodexEvent(e));
-}
 
 export function deriveRunStatusFromEvents(events: ConversationEvent[]): string | null {
   let status: string | null = null;
@@ -53,6 +41,50 @@ function extractText(payload: unknown): string | null {
   return typeof maybeText === "string" ? maybeText : null;
 }
 
+function extractUserVisibleText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+  if (typeof obj.text === "string") return obj.text;
+  if (typeof obj.message === "string") return obj.message;
+  if (typeof obj.delta === "string") return obj.delta;
+  if (typeof obj.error === "string") return obj.error;
+  if (Array.isArray(obj.summary_text) && obj.summary_text.every((x) => typeof x === "string")) {
+    return (obj.summary_text as string[]).join("");
+  }
+  return null;
+}
+
+function extractAgentMessageTextFromCodexEvent(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+
+  if (obj.type !== "item_completed") return null;
+
+  const item = obj.item;
+  if (!item || typeof item !== "object") return null;
+  const itemObj = item as Record<string, unknown>;
+
+  if (itemObj.type !== "AgentMessage") return null;
+
+  const content = itemObj.content;
+  if (!Array.isArray(content)) return null;
+
+  let out = "";
+  for (const part of content) {
+    if (typeof part === "string") {
+      out += part;
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    const p = part as Record<string, unknown>;
+    if (typeof p.text === "string") {
+      out += p.text;
+    }
+  }
+
+  return out ? out : null;
+}
+
 function eventToChatItem(e: ConversationEvent): ChatItem {
   const text = extractText(e.payload);
   if (e.event_type === "user_message") {
@@ -62,6 +94,92 @@ function eventToChatItem(e: ConversationEvent): ChatItem {
     return { key: `e-${e.id}`, role: "assistant", text: text ?? JSON.stringify(e.payload) };
   }
   return { key: `e-${e.id}`, role: "event", text: `${e.event_type}: ${JSON.stringify(e.payload)}` };
+}
+
+export function eventsToChatItems(
+  events: ConversationEvent[],
+  opts: { showRawCodexEvents: boolean },
+): ChatItem[] {
+  const out: ChatItem[] = [];
+  let activeStreamIndex: number | null = null;
+  let activeStreamItemId: string | null = null;
+
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+
+    if (e.event_type === "user_message") {
+      out.push(eventToChatItem(e));
+      // Starting a new user message usually means any previous streaming assistant output is "done".
+      activeStreamIndex = null;
+      activeStreamItemId = null;
+      continue;
+    }
+
+    if (e.event_type === "agent_message") {
+      const finalText = extractText(e.payload) ?? JSON.stringify(e.payload);
+      if (activeStreamIndex != null) {
+        out[activeStreamIndex].text = finalText;
+      } else {
+        out.push({ key: `e-${e.id}`, role: "assistant", text: finalText });
+      }
+      activeStreamIndex = null;
+      activeStreamItemId = null;
+      continue;
+    }
+
+    if (e.event_type === "codex_event") {
+      if (opts.showRawCodexEvents) {
+        out.push({ key: `e-${e.id}`, role: "event", text: `codex_event: ${JSON.stringify(e.payload)}` });
+        continue;
+      }
+
+      // Prefer user-visible fields over raw JSON when the raw toggle is off.
+      const payload = e.payload as Record<string, unknown> | null;
+      const codexType = payload?.type;
+
+      if (codexType === "agent_message_content_delta") {
+        const delta = payload?.delta;
+        const itemId = payload?.item_id;
+        if (typeof delta === "string") {
+          const id = typeof itemId === "string" ? itemId : null;
+          if (activeStreamIndex == null || (id != null && id !== activeStreamItemId)) {
+            out.push({ key: `stream-${id ?? e.id}`, role: "assistant", text: "" });
+            activeStreamIndex = out.length - 1;
+            activeStreamItemId = id;
+          }
+          out[activeStreamIndex].text += delta;
+          continue;
+        }
+      }
+
+      // Fallback: if the backend didn't derive an `agent_message`, show the message text from
+      // `item_completed` agent messages.
+      const maybeAgentText = extractAgentMessageTextFromCodexEvent(e.payload);
+      if (maybeAgentText) {
+        const next = events[i + 1];
+        if (next?.event_type !== "agent_message") {
+          out.push({ key: `e-${e.id}`, role: "assistant", text: maybeAgentText });
+        }
+        continue;
+      }
+
+      const visible = extractUserVisibleText(e.payload);
+      if (visible) {
+        out.push({ key: `e-${e.id}`, role: "event", text: visible });
+      }
+      continue;
+    }
+
+    // Default rendering for internal events.
+    const visible = extractUserVisibleText(e.payload);
+    out.push({
+      key: `e-${e.id}`,
+      role: "event",
+      text: visible ? `${e.event_type}: ${visible}` : `${e.event_type}: ${JSON.stringify(e.payload)}`,
+    });
+  }
+
+  return out;
 }
 
 export default function App() {
@@ -78,11 +196,7 @@ export default function App() {
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  const displayEvents = useMemo(
-    () => filterEventsForDisplay(events, { showRawCodexEvents }),
-    [events, showRawCodexEvents],
-  );
-  const items = useMemo(() => displayEvents.map(eventToChatItem), [displayEvents]);
+  const items = useMemo(() => eventsToChatItems(events, { showRawCodexEvents }), [events, showRawCodexEvents]);
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
     [conversations, activeConversationId],

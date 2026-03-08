@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationEvent } from "./lib/api";
-import {
-  deriveRunStatusFromEvents,
-  filterEventsForDisplay,
-  isRawCodexEvent,
-  isTurnInProgress,
-} from "./App";
+import { deriveRunStatusFromEvents, eventsToChatItems, isTurnInProgress } from "./App";
 
 function e(id: number, event_type: string, payload: unknown): ConversationEvent {
   return {
@@ -18,15 +13,37 @@ function e(id: number, event_type: string, payload: unknown): ConversationEvent 
 }
 
 describe("ui helpers", () => {
-  it("classifies codex_event as raw", () => {
-    expect(isRawCodexEvent(e(1, "codex_event", {}))).toBe(true);
-    expect(isRawCodexEvent(e(2, "agent_message", {}))).toBe(false);
+  it("shows user-visible codex fields even when raw is off", () => {
+    const events = [
+      e(1, "codex_event", {
+        type: "item_completed",
+        thread_id: "t",
+        turn_id: "turn_0",
+        item: { type: "AgentMessage", id: "item_0", content: [{ type: "Text", text: "hello" }] },
+      }),
+    ];
+    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].role).toBe("assistant");
+    expect(items[0].text).toBe("hello");
   });
 
-  it("filters raw codex events when toggle is off", () => {
-    const events = [e(1, "user_message", { text: "hi" }), e(2, "codex_event", { type: "item_completed" })];
-    expect(filterEventsForDisplay(events, { showRawCodexEvents: false }).map((x) => x.id)).toEqual([1]);
-    expect(filterEventsForDisplay(events, { showRawCodexEvents: true }).map((x) => x.id)).toEqual([1, 2]);
+  it("shows raw JSON when raw toggle is on", () => {
+    const events = [e(1, "codex_event", { type: "error", message: "boom" })];
+    const items = eventsToChatItems(events, { showRawCodexEvents: true });
+    expect(items[0].text).toContain("codex_event:");
+    expect(items[0].text).toContain("boom");
+  });
+
+  it("streams agent message deltas into a single assistant bubble", () => {
+    const events = [
+      e(1, "codex_event", { type: "agent_message_content_delta", item_id: "item_1", delta: "hel" }),
+      e(2, "codex_event", { type: "agent_message_content_delta", item_id: "item_1", delta: "lo" }),
+    ];
+    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].role).toBe("assistant");
+    expect(items[0].text).toBe("hello");
   });
 
   it("derives the latest run_status from the event stream", () => {
@@ -46,4 +63,3 @@ describe("ui helpers", () => {
     expect(isTurnInProgress("waiting_for_interaction")).toBe(true);
   });
 });
-
