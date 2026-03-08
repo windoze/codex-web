@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Conversation,
   ConversationEvent,
@@ -45,6 +47,10 @@ function extractUserVisibleText(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const obj = payload as Record<string, unknown>;
   if (typeof obj.text === "string") return obj.text;
+  if (obj.item && typeof obj.item === "object") {
+    const item = obj.item as Record<string, unknown>;
+    if (typeof item.text === "string") return item.text;
+  }
   if (typeof obj.message === "string") return obj.message;
   if (typeof obj.delta === "string") return obj.delta;
   if (typeof obj.error === "string") return obj.error;
@@ -58,11 +64,14 @@ function extractAgentMessageTextFromCodexEvent(payload: unknown): string | null 
   if (!payload || typeof payload !== "object") return null;
   const obj = payload as Record<string, unknown>;
 
-  if (obj.type !== "item_completed") return null;
+  if (obj.type !== "item_completed" && obj.type !== "item.completed") return null;
 
   const item = obj.item;
   if (!item || typeof item !== "object") return null;
   const itemObj = item as Record<string, unknown>;
+
+  // Older/newer protocols may include a flattened `text` field on the item.
+  if (typeof itemObj.text === "string") return itemObj.text;
 
   if (itemObj.type !== "AgentMessage") return null;
 
@@ -83,6 +92,21 @@ function extractAgentMessageTextFromCodexEvent(payload: unknown): string | null 
   }
 
   return out ? out : null;
+}
+
+function Bubble({ item }: { item: ChatItem }) {
+  if (item.role === "event") {
+    return (
+      <div className="bubble bubblePlain">
+        <pre className="eventText">{item.text}</pre>
+      </div>
+    );
+  }
+  return (
+    <div className="bubble bubbleMarkdown">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+    </div>
+  );
 }
 
 function eventToChatItem(e: ConversationEvent): ChatItem {
@@ -539,7 +563,7 @@ export default function App() {
           )}
           {items.map((m) => (
             <div key={m.key} className={`message ${m.role}`}>
-              <div className="bubble">{m.text}</div>
+              <Bubble item={m} />
             </div>
           ))}
         </div>

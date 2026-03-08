@@ -270,6 +270,46 @@ body {
   font-size: 13px;
 }
 
+.bubblePlain {
+  white-space: normal;
+}
+
+.eventText {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.bubbleMarkdown {
+  white-space: normal;
+}
+
+.bubbleMarkdown p {
+  margin: 0 0 8px 0;
+}
+
+.bubbleMarkdown p:last-child {
+  margin-bottom: 0;
+}
+
+.bubbleMarkdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 0.95em;
+}
+
+.bubbleMarkdown pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  background: rgba(127, 127, 127, 0.12);
+  overflow: auto;
+}
+
 .message.user .bubble {
   background: rgba(0, 120, 255, 0.15);
   border-color: rgba(0, 120, 255, 0.35);

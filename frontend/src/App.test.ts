@@ -28,6 +28,19 @@ describe("ui helpers", () => {
     expect(items[0].text).toBe("hello");
   });
 
+  it("extracts nested item.text for legacy item.completed events", () => {
+    const events = [
+      e(1, "codex_event", {
+        type: "item.completed",
+        item: { id: "item_0", type: "reasoning", text: "**Finding markdown files**\n\nhello" },
+      }),
+    ];
+    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].role).toBe("assistant");
+    expect(items[0].text).toContain("**Finding markdown files**");
+  });
+
   it("shows raw JSON when raw toggle is on", () => {
     const events = [e(1, "codex_event", { type: "error", message: "boom" })];
     const items = eventsToChatItems(events, { showRawCodexEvents: true });
