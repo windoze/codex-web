@@ -47,6 +47,16 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
 
   const items = useMemo(() => events.map(eventToChatItem), [events]);
+  const runStatus = useMemo(() => {
+    let status: string | null = null;
+    for (const e of events) {
+      if (e.event_type !== "run_status") continue;
+      const raw = (e.payload as { status?: unknown } | null)?.status;
+      if (typeof raw === "string") status = raw;
+    }
+    return status;
+  }, [events]);
+  const isConversationRunning = runStatus === "running";
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -177,6 +187,7 @@ export default function App() {
     e.preventDefault();
     if (!activeConversationId) return;
     if (!messageText.trim()) return;
+    if (isConversationRunning) return;
     setError(null);
     setIsSending(true);
     try {
@@ -264,9 +275,13 @@ export default function App() {
             onChange={(e) => setMessageText(e.target.value)}
             className="input"
             placeholder={activeConversationId ? "Send a message…" : "Create/select a conversation first"}
-            disabled={!activeConversationId || isSending}
+            disabled={!activeConversationId || isSending || isConversationRunning}
           />
-          <button className="button" type="submit" disabled={!activeConversationId || isSending}>
+          <button
+            className="button"
+            type="submit"
+            disabled={!activeConversationId || isSending || isConversationRunning}
+          >
             Send
           </button>
         </form>

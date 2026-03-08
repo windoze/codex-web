@@ -117,14 +117,11 @@ async fn get_conversation(
     State(state): State<AppState>,
     Path(conversation_id): Path<Uuid>,
 ) -> Result<Json<ConversationWithRun>, ApiError> {
-    // For now, we fetch from list and filter. Later we can add a direct DB query.
     let conversation = state
         .db
-        .list_conversations()
+        .get_conversation_optional(conversation_id)
         .await
         .map_err(ApiError::internal)?
-        .into_iter()
-        .find(|c| c.id == conversation_id)
         .ok_or_else(|| ApiError::not_found("conversation not found"))?;
 
     let run = state
@@ -171,18 +168,72 @@ async fn post_user_message(
         return Err(ApiError::bad_request("message text must not be empty"));
     }
 
-    // Milestone 1: only persist the user message and broadcast. Codex execution comes in Milestone 2.
+    let conversation = state
+        .db
+        .get_conversation_optional(conversation_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("conversation not found"))?;
+
+    let project_id = conversation
+        .project_id
+        .ok_or_else(|| ApiError::bad_request("conversation has no project"))?;
+    let project = state
+        .db
+        .get_project_optional(project_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::bad_request("project not found"))?;
+
+    // Non-reentrant: only one turn per conversation may run at a time.
+    let marked = state
+        .db
+        .try_mark_run_running(conversation_id)
+        .await
+        .map_err(ApiError::internal)?;
+    if !marked {
+        return Err(ApiError::conflict(
+            "conversation is already running; wait for it to finish",
+        ));
+    }
+
+    let prompt = req.text;
+    let user_text = prompt.clone();
+
     let event = state
         .db
-        .append_event(
-            conversation_id,
-            "user_message",
-            &json!({"text": req.text}),
-        )
+        .append_event(conversation_id, "user_message", &json!({ "text": user_text }))
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = state.event_tx.send(event.clone());
+
+    let running = state
+        .db
+        .append_event(conversation_id, "run_status", &json!({ "status": "running" }))
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = state.event_tx.send(running);
+
+    let run = state
+        .db
+        .get_run(conversation_id)
         .await
         .map_err(ApiError::internal)?;
 
-    let _ = state.event_tx.send(event.clone());
+    let ctx = crate::orchestrator::TurnContext {
+        db: state.db.clone(),
+        event_tx: state.event_tx.clone(),
+        codex: state.codex.clone(),
+        conversation_id,
+        project_root: PathBuf::from(project.root_path),
+        session_id: run.codex_session_id,
+        prompt,
+    };
+
+    tokio::spawn(async move {
+        crate::orchestrator::run_turn(ctx).await;
+    });
+
     Ok(Json(event))
 }
 
@@ -207,6 +258,13 @@ impl ApiError {
         }
     }
 
+    fn conflict(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: msg.into(),
+        }
+    }
+
     fn internal(err: anyhow::Error) -> Self {
         tracing::error!(error = ?err, "api error");
         Self {
@@ -221,4 +279,3 @@ impl IntoResponse for ApiError {
         (self.status, Json(json!({ "error": self.message }))).into_response()
     }
 }
-

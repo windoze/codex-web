@@ -2,21 +2,25 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-use codex_web::db::ConversationEvent;
 use codex_web::server::{build_router, AppState};
 
 #[tokio::test]
-async fn projects_conversations_and_events_roundtrip() {
+async fn posting_message_runs_codex_stub_and_persists_agent_message() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let db_path = temp_dir.path().join("api.sqlite3");
+    let db_path = temp_dir.path().join("codex_stub.sqlite3");
     let db = codex_web::db::Db::connect(&db_path).await.expect("db connect");
-    let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(16);
+    let (event_tx, _rx) = tokio::sync::broadcast::channel(128);
+
+    let codex = codex_web::codex::CodexRuntime::stub(vec![
+        serde_json::json!({"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}),
+        serde_json::json!({"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello from stub"}}),
+    ]);
 
     let app = build_router(
         AppState {
             db,
             event_tx,
-            codex: codex_web::codex::CodexRuntime::stub(vec![]),
+            codex,
         },
         None,
     );
@@ -49,7 +53,7 @@ async fn projects_conversations_and_events_roundtrip() {
         .body(Body::from(
             serde_json::json!({
                 "project_id": project_id,
-                "title": "Test Conversation"
+                "title": "Stub Conversation"
             })
             .to_string(),
         ))
@@ -67,42 +71,40 @@ async fn projects_conversations_and_events_roundtrip() {
         .unwrap()
         .to_string();
 
-    // Post a user message -> should broadcast an event.
+    // Post message (triggers background stub turn).
     let req = Request::builder()
         .method("POST")
         .uri(format!(
             "/api/conversations/{conversation_id}/messages"
         ))
         .header("content-type", "application/json")
-        .body(Body::from(
-            serde_json::json!({ "text": "hello" }).to_string(),
-        ))
+        .body(Body::from(serde_json::json!({ "text": "hi" }).to_string()))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let event: ConversationEvent = serde_json::from_slice(&body).unwrap();
-    assert_eq!(event.event_type, "user_message");
 
-    let broadcast_event = event_rx.recv().await.unwrap();
-    assert_eq!(broadcast_event.id, event.id);
-
-    // List events (should include at least the user message + run_status).
-    let req = Request::builder()
-        .method("GET")
-        .uri(format!(
-            "/api/conversations/{conversation_id}/events?after=0&limit=100"
-        ))
-        .body(Body::empty())
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let events: Vec<ConversationEvent> = serde_json::from_slice(&body).unwrap();
-    assert!(events.len() >= 2, "expected >= 2 events, got {}", events.len());
-    assert_eq!(events[0].id, event.id);
+    // Poll events until we see the derived agent_message.
+    let mut saw_agent = false;
+    for _ in 0..25 {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/api/conversations/{conversation_id}/events?after=0&limit=100"
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        if events.iter().any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("agent_message")) {
+            saw_agent = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(saw_agent, "expected agent_message to be persisted");
 }
+

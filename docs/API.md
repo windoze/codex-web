@@ -34,9 +34,15 @@ Base URL (default): `http://127.0.0.1:8787`
 - `POST /api/conversations/:conversation_id/messages`
   - Body: `{ "text": "..." }`
   - Response: `ConversationEvent` (type = `user_message`)
+  - Side effects:
+    - Marks the conversation run as `running` (non-reentrant; concurrent sends return `409`)
+    - Spawns a Codex turn via `codex exec --json` / `codex exec resume <SESSION_ID> --json`
+    - Emits additional conversation events:
+      - `run_status` (`running` → `completed` / `failed`)
+      - `codex_event` (raw Codex JSONL)
+      - `agent_message` (derived from Codex `item.completed` / `agent_message`)
 
 ## WebSocket
 
 - `GET /ws?conversation_id=<uuid>`
   - Sends JSON-encoded `ConversationEvent` objects for that conversation.
-

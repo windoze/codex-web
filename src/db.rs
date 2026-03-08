@@ -87,6 +87,36 @@ impl Db {
         Ok(rows.into_iter().map(Project::from).collect())
     }
 
+    pub async fn get_project(&self, project_id: Uuid) -> anyhow::Result<Project> {
+        let row = sqlx::query_as::<_, ProjectRow>(
+            r#"
+            SELECT id, name, root_path, created_at_ms, updated_at_ms
+            FROM projects
+            WHERE id = ?1
+            "#,
+        )
+        .bind(project_id.to_string())
+        .fetch_one(&self.pool)
+        .await
+        .context("get project")?;
+        Ok(Project::from(row))
+    }
+
+    pub async fn get_project_optional(&self, project_id: Uuid) -> anyhow::Result<Option<Project>> {
+        let row = sqlx::query_as::<_, ProjectRow>(
+            r#"
+            SELECT id, name, root_path, created_at_ms, updated_at_ms
+            FROM projects
+            WHERE id = ?1
+            "#,
+        )
+        .bind(project_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .context("get project (optional)")?;
+        Ok(row.map(Project::from))
+    }
+
     pub async fn create_conversation(
         &self,
         project_id: Option<Uuid>,
@@ -136,6 +166,39 @@ impl Db {
         .context("list conversations")?;
 
         Ok(rows.into_iter().map(Conversation::from).collect())
+    }
+
+    pub async fn get_conversation(&self, conversation_id: Uuid) -> anyhow::Result<Conversation> {
+        let row = sqlx::query_as::<_, ConversationRow>(
+            r#"
+            SELECT id, project_id, title, created_at_ms, updated_at_ms, archived_at_ms
+            FROM conversations
+            WHERE id = ?1
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .fetch_one(&self.pool)
+        .await
+        .context("get conversation")?;
+        Ok(Conversation::from(row))
+    }
+
+    pub async fn get_conversation_optional(
+        &self,
+        conversation_id: Uuid,
+    ) -> anyhow::Result<Option<Conversation>> {
+        let row = sqlx::query_as::<_, ConversationRow>(
+            r#"
+            SELECT id, project_id, title, created_at_ms, updated_at_ms, archived_at_ms
+            FROM conversations
+            WHERE id = ?1
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .context("get conversation (optional)")?;
+        Ok(row.map(Conversation::from))
     }
 
     pub async fn append_event(

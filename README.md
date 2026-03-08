@@ -12,7 +12,7 @@ See `PLAN.md` for the implementation roadmap and milestone status.
 ## Requirements
 
 - Rust toolchain (edition 2024)
-- `codex` CLI available in `PATH` (for run orchestration milestones)
+- `codex` CLI available in `PATH` (required for assistant responses)
 
 Frontend requirements (added in later milestones):
 - Node.js + npm

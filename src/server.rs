@@ -17,6 +17,7 @@ use crate::db::Db;
 pub struct AppState {
     pub db: Db,
     pub event_tx: broadcast::Sender<crate::db::ConversationEvent>,
+    pub codex: crate::codex::CodexRuntime,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -25,7 +26,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let db = Db::connect(&config.db_path).await?;
     let (event_tx, _rx) = broadcast::channel(1024);
     let app = build_router(
-        AppState { db, event_tx },
+        AppState {
+            db,
+            event_tx,
+            codex: crate::codex::CodexRuntime::real(),
+        },
         config.static_dir.as_deref(),
     );
 
@@ -123,7 +128,14 @@ mod tests {
         let db_path = temp_dir.path().join("healthz.sqlite3");
         let db = Db::connect(&db_path).await.expect("db connect");
         let (event_tx, _rx) = broadcast::channel(16);
-        let app = build_router(AppState { db, event_tx }, None);
+        let app = build_router(
+            AppState {
+                db,
+                event_tx,
+                codex: crate::codex::CodexRuntime::stub(vec![]),
+            },
+            None,
+        );
 
         let response = app
             .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())

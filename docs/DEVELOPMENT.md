@@ -40,3 +40,12 @@ Expected:
 - The conversation history is loaded from the server event log.
 - New messages continue appending without duplicates.
 
+## Codex run verification (Milestone 2)
+
+1. Start the daemon and UI.
+2. Create a conversation from a project directory.
+3. Send a message.
+
+Expected:
+- The server invokes the `codex` CLI in that project directory.
+- The UI receives `run_status` events and then an `agent_message` event.
