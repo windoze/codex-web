@@ -265,7 +265,12 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - Search, rename, archive, export.
 - Project switching UX improvements.
 
-### Milestone 5 — GitHub (optional, later)
+### Milestone 5 — Schema-typed Codex protocol (1–2 days)
+- Track upstream Codex JSON schemas in `schemas/`.
+- Parse `codex exec --json` output into schema-derived Rust types (no ad-hoc `serde_json::Value` branching).
+- Derive `agent_message` and interaction requests from typed events.
+
+### Milestone 6 — GitHub (optional, later)
 - Clone workflow + repo projects.
 - Authentication if needed.
 
@@ -292,6 +297,7 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Run orchestration for project-based conversations
 - [x] Interaction request routing + default responses
 - [x] Documented config knobs (ports, DB path, policies, limits)
+- [x] Schema-typed parsing for Codex `--json` output
 
 ## 13) Progress
 - [x] Milestone 0 — Foundations
@@ -299,3 +305,5 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Milestone 2 — Run orchestration
 - [x] Milestone 3 — Interaction requests + defaults
 - [x] Milestone 4 — Multi-conversation polish
+- [x] Milestone 5 — Schema-typed Codex protocol
+- [ ] Milestone 6 — GitHub (optional, later)

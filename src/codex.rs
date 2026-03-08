@@ -6,6 +6,8 @@ use serde_json::Value;
 use std::future::Future;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use crate::protocol::event_msg::EventMsg;
+
 #[derive(Debug, Clone)]
 pub enum CodexRuntime {
     /// Call the real `codex` binary.
@@ -35,6 +37,16 @@ impl Default for CodexReal {
 pub struct CodexStub {
     pub events: Arc<Vec<Value>>,
     pub exit_success: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum CodexOutputLine {
+    /// A JSON line that successfully parsed as a Codex protocol event.
+    Event(EventMsg),
+    /// A JSON line that did not match the Codex protocol schema we know.
+    UnknownJson(Value),
+    /// A non-JSON stdout line (should be rare with `--json`).
+    OutputLine(String),
 }
 
 impl CodexRuntime {
@@ -75,7 +87,7 @@ pub async fn run_jsonl_events<F, Fut>(
     on_event: F,
 ) -> anyhow::Result<CodexOutcome>
 where
-    F: FnMut(Value) -> Fut + Send,
+    F: FnMut(CodexOutputLine) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
 {
     run_jsonl_events_with_input(runtime, invocation, on_event, |_event| async { Ok(None) }).await
@@ -88,9 +100,9 @@ pub async fn run_jsonl_events_with_input<F, Fut, I, IFut>(
     mut on_input: I,
 ) -> anyhow::Result<CodexOutcome>
 where
-    F: FnMut(Value) -> Fut + Send,
+    F: FnMut(CodexOutputLine) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
-    I: FnMut(&Value) -> IFut + Send,
+    I: FnMut(&EventMsg) -> IFut + Send,
     IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     match runtime {
@@ -106,21 +118,31 @@ async fn run_stub_with_input<F, Fut, I, IFut>(
     on_input: &mut I,
 ) -> anyhow::Result<CodexOutcome>
 where
-    F: FnMut(Value) -> Fut + Send,
+    F: FnMut(CodexOutputLine) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
-    I: FnMut(&Value) -> IFut + Send,
+    I: FnMut(&EventMsg) -> IFut + Send,
     IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     let mut session_id: Option<String> = None;
     for e in stub.events.iter().cloned() {
+        let parsed: CodexOutputLine = match serde_json::from_value::<EventMsg>(e.clone()) {
+            Ok(ev) => CodexOutputLine::Event(ev),
+            Err(_) => CodexOutputLine::UnknownJson(e.clone()),
+        };
+
         if session_id.is_none() {
-            session_id = thread_id_from_event(&e);
+            if let CodexOutputLine::Event(ev) = &parsed {
+                session_id = session_id_from_event(ev);
+            }
         }
-        let needs_input = stdin_needed(&e);
-        on_event(e.clone()).await?;
+
+        let needs_input = matches!(parsed, CodexOutputLine::Event(ref ev) if stdin_needed(ev));
+        on_event(parsed.clone()).await?;
 
         if needs_input {
-            let _ = on_input(&e).await?;
+            if let CodexOutputLine::Event(ev) = &parsed {
+                let _ = on_input(ev).await?;
+            }
         }
     }
     if !stub.exit_success {
@@ -136,9 +158,9 @@ async fn run_real_with_input<F, Fut, I, IFut>(
     on_input: &mut I,
 ) -> anyhow::Result<CodexOutcome>
 where
-    F: FnMut(Value) -> Fut + Send,
+    F: FnMut(CodexOutputLine) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
-    I: FnMut(&Value) -> IFut + Send,
+    I: FnMut(&EventMsg) -> IFut + Send,
     IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     let CodexInvocation {
@@ -184,34 +206,33 @@ where
             continue;
         }
 
-        let json: Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => {
-                // Preserve non-JSON output to help debugging.
-                let _ = on_event(serde_json::json!({
-                    "type": "codex.output_line",
-                    "text": line,
-                }))
-                .await;
-                continue;
-            }
+        let parsed: CodexOutputLine = match serde_json::from_str::<EventMsg>(&line) {
+            Ok(ev) => CodexOutputLine::Event(ev),
+            Err(_) => match serde_json::from_str::<Value>(&line) {
+                Ok(v) => CodexOutputLine::UnknownJson(v),
+                Err(_) => CodexOutputLine::OutputLine(line),
+            },
         };
 
         if session_id_out.is_none() {
-            session_id_out = thread_id_from_event(&json);
+            if let CodexOutputLine::Event(ev) = &parsed {
+                session_id_out = session_id_from_event(ev);
+            }
         }
 
-        let needs_input = stdin_needed(&json);
-        on_event(json.clone()).await?;
+        let needs_input = matches!(parsed, CodexOutputLine::Event(ref ev) if stdin_needed(ev));
+        on_event(parsed.clone()).await?;
 
         if needs_input {
-            if let Some(input) = on_input(&json).await? {
-                use tokio::io::AsyncWriteExt;
-                stdin
-                    .write_all(input.as_bytes())
-                    .await
-                    .context("write codex stdin")?;
-                stdin.flush().await.context("flush codex stdin")?;
+            if let CodexOutputLine::Event(ev) = &parsed {
+                if let Some(input) = on_input(ev).await? {
+                    use tokio::io::AsyncWriteExt;
+                    stdin
+                        .write_all(input.as_bytes())
+                        .await
+                        .context("write codex stdin")?;
+                    stdin.flush().await.context("flush codex stdin")?;
+                }
             }
         }
     }
@@ -226,22 +247,22 @@ where
     })
 }
 
-fn stdin_needed(event: &Value) -> bool {
-    match event.get("type").and_then(|v| v.as_str()) {
-        Some("exec_approval_request") => true,
-        Some("apply_patch_approval_request") => true,
-        Some("elicitation_request") => true,
-        _ => false,
-    }
+fn stdin_needed(event: &EventMsg) -> bool {
+    use crate::protocol::event_msg::EventMsg as M;
+
+    matches!(
+        event,
+        M::ExecApprovalRequest { .. } | M::ApplyPatchApprovalRequest { .. } | M::ElicitationRequest { .. }
+    )
 }
 
-fn thread_id_from_event(event: &Value) -> Option<String> {
-    let t = event.get("type")?.as_str()?;
-    if t != "thread.started" {
-        return None;
+fn session_id_from_event(event: &EventMsg) -> Option<String> {
+    use crate::protocol::event_msg::EventMsg as M;
+
+    match event {
+        M::SessionConfigured { session_id, .. } => Some(session_id.to_string()),
+        M::ItemStarted { thread_id, .. } => Some(thread_id.to_string()),
+        M::ItemCompleted { thread_id, .. } => Some(thread_id.to_string()),
+        _ => None,
     }
-    event
-        .get("thread_id")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
 }

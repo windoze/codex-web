@@ -75,6 +75,18 @@ The daemon can be configured via CLI flags or environment variables:
 - `CODEX_WEB_MAX_CONCURRENT_RUNS` (default `2`)
 - `RUST_LOG` (default `codex_web=info,tower_http=info`)
 
+## Codex protocol schemas
+
+This repo tracks Codex JSON protocol schemas in `schemas/` and generates Rust types from them
+at build time (via `typify`, see `src/protocol.rs`). This is used to parse `codex exec --json`
+output into strongly-typed events.
+
+Regenerate schemas:
+
+```sh
+codex app-server generate-json-schema --out ./schemas
+```
+
 ## Data storage
 
 By default the SQLite DB lives at:

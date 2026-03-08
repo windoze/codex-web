@@ -12,8 +12,18 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
     let (event_tx, _rx) = tokio::sync::broadcast::channel(128);
 
     let codex = codex_web::codex::CodexRuntime::stub(vec![
-        serde_json::json!({"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}),
-        serde_json::json!({"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello from stub"}}),
+        serde_json::json!({
+            "type": "item_completed",
+            "thread_id": "00000000-0000-0000-0000-000000000001",
+            "turn_id": "turn_0",
+            "item": {
+                "type": "AgentMessage",
+                "id": "item_0",
+                "content": [
+                    { "type": "Text", "text": "hello from stub" }
+                ]
+            }
+        }),
     ]);
 
     let app = build_router(

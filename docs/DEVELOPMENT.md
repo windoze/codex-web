@@ -50,6 +50,18 @@ Expected:
 - The server invokes the `codex` CLI in that project directory.
 - The UI receives `run_status` events and then an `agent_message` event.
 
+## Codex protocol schemas
+
+codex-web parses `codex exec --json` output into schema-typed Rust structs/enums generated from the JSON schemas in `schemas/`.
+
+Regenerate schemas (requires a recent `codex` CLI):
+
+```sh
+codex app-server generate-json-schema --out ./schemas
+```
+
+The Rust types are generated at compile time via `typify` (see `src/protocol.rs`).
+
 ## Interaction verification (Milestone 3)
 
 Interaction requests are emitted when the Codex CLI produces approval/elicitation events (e.g. `exec_approval_request`).

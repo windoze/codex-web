@@ -18,9 +18,25 @@ async fn interaction_can_be_resolved_via_api() {
     let ws_clients = Arc::new(AtomicUsize::new(1));
 
     let codex = codex_web::codex::CodexRuntime::stub(vec![
-        serde_json::json!({"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000010"}),
-        serde_json::json!({"type":"exec_approval_request","call_id":"call_1","command":"echo hi"}),
-        serde_json::json!({"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"after approval"}}),
+        serde_json::json!({
+            "type": "exec_approval_request",
+            "call_id": "call_1",
+            "command": ["echo", "hi"],
+            "cwd": ".",
+            "parsed_cmd": []
+        }),
+        serde_json::json!({
+            "type": "item_completed",
+            "thread_id": "00000000-0000-0000-0000-000000000010",
+            "turn_id": "turn_0",
+            "item": {
+                "type": "AgentMessage",
+                "id": "item_0",
+                "content": [
+                    { "type": "Text", "text": "after approval" }
+                ]
+            }
+        }),
     ]);
 
     let app = build_router(

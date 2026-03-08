@@ -57,7 +57,7 @@ Interaction requests represent “blocking” prompts (e.g., approvals) that can
     - Emits additional conversation events:
       - `run_status` (`running` → `completed` / `failed`)
       - `codex_event` (raw Codex JSONL)
-      - `agent_message` (derived from Codex `item.completed` / `agent_message`)
+      - `agent_message` (derived from Codex `item_completed` events where `item.type = AgentMessage`)
 
 ## WebSocket
 
