@@ -17,6 +17,9 @@ async fn projects_conversations_and_events_roundtrip() {
             db,
             event_tx,
             codex: codex_web::codex::CodexRuntime::stub(vec![]),
+            ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            interaction_timeout_ms: 30_000,
+            interaction_default_action: "decline".to_string(),
         },
         None,
     );

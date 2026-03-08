@@ -118,7 +118,7 @@ body {
 
 .chat {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   height: 100vh;
 }
 
@@ -135,6 +135,46 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.interactions {
+  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+  padding: 10px 14px;
+  display: grid;
+  gap: 10px;
+  max-height: 32vh;
+  overflow: auto;
+}
+
+.interactionsTitle {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.interactionCard {
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.interactionKind {
+  font-size: 12px;
+  opacity: 0.85;
+  font-weight: 600;
+}
+
+.interactionPayload {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.85;
+  white-space: pre-wrap;
+}
+
+.interactionActions {
+  display: flex;
+  gap: 8px;
 }
 
 .message {

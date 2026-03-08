@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::db::{Conversation, ConversationEvent, Project, Run};
+use crate::db::{Conversation, ConversationEvent, InteractionRequest, Project, Run};
 use crate::server::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -21,6 +21,10 @@ pub fn router() -> Router<AppState> {
             get(get_conversation),
         )
         .route(
+            "/conversations/:conversation_id/interactions",
+            get(list_pending_interactions),
+        )
+        .route(
             "/conversations/:conversation_id/events",
             get(list_conversation_events),
         )
@@ -28,6 +32,8 @@ pub fn router() -> Router<AppState> {
             "/conversations/:conversation_id/messages",
             post(post_user_message),
         )
+        .route("/interactions/:interaction_id/respond", post(respond_interaction))
+        .route("/interactions/pending", get(list_all_pending_interactions))
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,6 +160,18 @@ async fn list_conversation_events(
     Ok(Json(events))
 }
 
+async fn list_pending_interactions(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<Json<Vec<InteractionRequest>>, ApiError> {
+    let pending = state
+        .db
+        .list_pending_interactions(conversation_id)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(pending))
+}
+
 #[derive(Debug, Deserialize)]
 struct PostMessageRequest {
     text: String,
@@ -228,6 +246,9 @@ async fn post_user_message(
         project_root: PathBuf::from(project.root_path),
         session_id: run.codex_session_id,
         prompt,
+        ws_clients: state.ws_clients.clone(),
+        interaction_timeout_ms: state.interaction_timeout_ms,
+        interaction_default_action: state.interaction_default_action.clone(),
     };
 
     tokio::spawn(async move {
@@ -235,6 +256,68 @@ async fn post_user_message(
     });
 
     Ok(Json(event))
+}
+
+#[derive(Debug, Deserialize)]
+struct RespondInteractionRequest {
+    action: String,
+    text: Option<String>,
+}
+
+async fn respond_interaction(
+    State(state): State<AppState>,
+    Path(interaction_id): Path<Uuid>,
+    Json(req): Json<RespondInteractionRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let interaction = state
+        .db
+        .get_interaction_request(interaction_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("interaction not found"))?;
+
+    let response = json!({
+        "action": req.action,
+        "text": req.text,
+    });
+
+    let resolved = state
+        .db
+        .try_resolve_interaction(interaction_id, &response, "web")
+        .await
+        .map_err(ApiError::internal)?;
+    if !resolved {
+        return Err(ApiError::conflict("interaction already resolved"));
+    }
+
+    let response_event = state
+        .db
+        .append_event(
+            interaction.conversation_id,
+            "interaction_response",
+            &json!({
+                "interaction_id": interaction_id,
+                "kind": interaction.kind,
+                "response": response,
+                "resolved_by": "web",
+            }),
+        )
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = state.event_tx.send(response_event);
+
+    Ok(Json(json!({"status":"ok"})))
+}
+
+async fn list_all_pending_interactions(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<InteractionRequest>>, ApiError> {
+    let pending = state
+        .db
+        .list_all_pending_interactions()
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(pending))
 }
 
 #[derive(Debug)]

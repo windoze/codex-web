@@ -72,33 +72,56 @@ pub struct CodexOutcome {
 pub async fn run_jsonl_events<F, Fut>(
     runtime: CodexRuntime,
     invocation: CodexInvocation,
-    mut on_event: F,
+    on_event: F,
 ) -> anyhow::Result<CodexOutcome>
 where
     F: FnMut(Value) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
 {
-    match runtime {
-        CodexRuntime::Real(cfg) => run_real(cfg, invocation, &mut on_event).await,
-        CodexRuntime::Stub(stub) => run_stub(stub, invocation, &mut on_event).await,
-    }
+    run_jsonl_events_with_input(runtime, invocation, on_event, |_event| async { Ok(None) }).await
 }
 
-async fn run_stub<F, Fut>(
-    stub: CodexStub,
-    _invocation: CodexInvocation,
-    on_event: &mut F,
+pub async fn run_jsonl_events_with_input<F, Fut, I, IFut>(
+    runtime: CodexRuntime,
+    invocation: CodexInvocation,
+    mut on_event: F,
+    mut on_input: I,
 ) -> anyhow::Result<CodexOutcome>
 where
     F: FnMut(Value) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
+    I: FnMut(&Value) -> IFut + Send,
+    IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
+{
+    match runtime {
+        CodexRuntime::Real(cfg) => run_real_with_input(cfg, invocation, &mut on_event, &mut on_input).await,
+        CodexRuntime::Stub(stub) => run_stub_with_input(stub, invocation, &mut on_event, &mut on_input).await,
+    }
+}
+
+async fn run_stub_with_input<F, Fut, I, IFut>(
+    stub: CodexStub,
+    _invocation: CodexInvocation,
+    on_event: &mut F,
+    on_input: &mut I,
+) -> anyhow::Result<CodexOutcome>
+where
+    F: FnMut(Value) -> Fut + Send,
+    Fut: Future<Output = anyhow::Result<()>> + Send,
+    I: FnMut(&Value) -> IFut + Send,
+    IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     let mut session_id: Option<String> = None;
     for e in stub.events.iter().cloned() {
         if session_id.is_none() {
             session_id = thread_id_from_event(&e);
         }
-        on_event(e).await?;
+        let needs_input = stdin_needed(&e);
+        on_event(e.clone()).await?;
+
+        if needs_input {
+            let _ = on_input(&e).await?;
+        }
     }
     if !stub.exit_success {
         anyhow::bail!("stubbed codex failure");
@@ -106,14 +129,17 @@ where
     Ok(CodexOutcome { session_id })
 }
 
-async fn run_real<F, Fut>(
+async fn run_real_with_input<F, Fut, I, IFut>(
     cfg: CodexReal,
     invocation: CodexInvocation,
     on_event: &mut F,
+    on_input: &mut I,
 ) -> anyhow::Result<CodexOutcome>
 where
     F: FnMut(Value) -> Fut + Send,
     Fut: Future<Output = anyhow::Result<()>> + Send,
+    I: FnMut(&Value) -> IFut + Send,
+    IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     let CodexInvocation {
         project_root,
@@ -141,10 +167,13 @@ where
 
     cmd.arg("--json").arg(prompt);
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().context("spawn codex process")?;
     let stdout = child.stdout.take().context("codex stdout missing")?;
+    let mut stdin = child.stdin.take().context("codex stdin missing")?;
     let mut lines = BufReader::new(stdout).lines();
 
     let mut session_id_out: Option<String> = None;
@@ -171,7 +200,19 @@ where
             session_id_out = thread_id_from_event(&json);
         }
 
-        on_event(json).await?;
+        let needs_input = stdin_needed(&json);
+        on_event(json.clone()).await?;
+
+        if needs_input {
+            if let Some(input) = on_input(&json).await? {
+                use tokio::io::AsyncWriteExt;
+                stdin
+                    .write_all(input.as_bytes())
+                    .await
+                    .context("write codex stdin")?;
+                stdin.flush().await.context("flush codex stdin")?;
+            }
+        }
     }
 
     let status = child.wait().await.context("wait codex process")?;
@@ -182,6 +223,15 @@ where
     Ok(CodexOutcome {
         session_id: session_id_out.or(session_id),
     })
+}
+
+fn stdin_needed(event: &Value) -> bool {
+    match event.get("type").and_then(|v| v.as_str()) {
+        Some("exec_approval_request") => true,
+        Some("apply_patch_approval_request") => true,
+        Some("elicitation_request") => true,
+        _ => false,
+    }
 }
 
 fn thread_id_from_event(event: &Value) -> Option<String> {

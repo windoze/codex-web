@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use directories::BaseDirs;
+use uuid::Uuid;
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-web", version, about = "Local web UI + daemon for Codex sessions")]
@@ -16,6 +17,8 @@ pub struct Cli {
 pub enum Command {
     /// Run the local codex-web daemon (HTTP + WebSocket)
     Serve(ServeArgs),
+    /// List/respond to pending interaction requests via the daemon HTTP API
+    Interactions(InteractionsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -31,6 +34,55 @@ pub struct ServeArgs {
     /// Directory to serve as static web assets (optional; for production builds)
     #[arg(long, env = "CODEX_WEB_STATIC_DIR")]
     pub static_dir: Option<PathBuf>,
+
+    /// Default timeout (ms) for interaction requests before auto-responding
+    #[arg(long, env = "CODEX_WEB_INTERACTION_TIMEOUT_MS", default_value_t = 30_000)]
+    pub interaction_timeout_ms: i64,
+
+    /// Default action to take when the user is away (e.g., "decline" or "accept")
+    #[arg(long, env = "CODEX_WEB_INTERACTION_DEFAULT_ACTION", default_value = "decline")]
+    pub interaction_default_action: String,
+
+    /// Codex CLI approval policy (passed to `codex --ask-for-approval`)
+    #[arg(long, env = "CODEX_WEB_CODEX_APPROVAL_POLICY", default_value = "never")]
+    pub codex_ask_for_approval: String,
+
+    /// Codex CLI sandbox policy (passed to `codex --sandbox`)
+    #[arg(long, env = "CODEX_WEB_CODEX_SANDBOX", default_value = "workspace-write")]
+    pub codex_sandbox: String,
+}
+
+#[derive(Debug, Args)]
+pub struct InteractionsArgs {
+    /// Base URL for the codex-web daemon
+    #[arg(long, env = "CODEX_WEB_DAEMON", default_value = "http://127.0.0.1:8787")]
+    pub daemon: String,
+
+    #[command(subcommand)]
+    pub command: InteractionsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum InteractionsCommand {
+    /// List pending interaction requests
+    List {
+        /// Optional conversation id to filter by
+        #[arg(long)]
+        conversation_id: Option<Uuid>,
+    },
+    /// Respond to an interaction request
+    Respond {
+        /// Interaction request id
+        interaction_id: Uuid,
+
+        /// Action to take (e.g. "accept" or "decline")
+        #[arg(long)]
+        action: String,
+
+        /// Optional free-form text input (used for elicitation requests)
+        #[arg(long)]
+        text: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +90,10 @@ pub struct Config {
     pub listen: SocketAddr,
     pub db_path: PathBuf,
     pub static_dir: Option<PathBuf>,
+    pub interaction_timeout_ms: i64,
+    pub interaction_default_action: String,
+    pub codex_ask_for_approval: String,
+    pub codex_sandbox: String,
 }
 
 impl Config {
@@ -51,6 +107,10 @@ impl Config {
             listen: args.listen,
             db_path,
             static_dir: args.static_dir,
+            interaction_timeout_ms: args.interaction_timeout_ms,
+            interaction_default_action: args.interaction_default_action,
+            codex_ask_for_approval: args.codex_ask_for_approval,
+            codex_sandbox: args.codex_sandbox,
         })
     }
 
@@ -65,4 +125,3 @@ fn default_db_path() -> anyhow::Result<PathBuf> {
     let base = BaseDirs::new().context("unable to resolve user home directory")?;
     Ok(base.home_dir().join(".codex-web").join("codex-web.sqlite"))
 }
-

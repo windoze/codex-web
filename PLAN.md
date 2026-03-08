@@ -290,12 +290,12 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] REST + WS APIs
 - [x] Web UI with multi-conversation chat
 - [x] Run orchestration for project-based conversations
-- [ ] Interaction request routing + default responses
-- [ ] Documented config knobs (ports, DB path, policies, limits)
+- [x] Interaction request routing + default responses
+- [x] Documented config knobs (ports, DB path, policies, limits)
 
 ## 13) Progress
 - [x] Milestone 0 — Foundations
 - [x] Milestone 1 — Basic chat + persistence
 - [x] Milestone 2 — Run orchestration
-- [ ] Milestone 3 — Interaction requests + defaults
+- [x] Milestone 3 — Interaction requests + defaults
 - [ ] Milestone 4 — Multi-conversation polish

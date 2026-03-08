@@ -29,6 +29,18 @@ Base URL (default): `http://127.0.0.1:8787`
 - `GET /api/conversations/:conversation_id/events?after=<id>&limit=<n>`
   - Response: `ConversationEvent[]` (ordered by id ASC)
 
+## Interaction requests
+
+Interaction requests represent “blocking” prompts (e.g., approvals) that can be answered from the web UI.
+
+- `GET /api/conversations/:conversation_id/interactions`
+  - Response: `InteractionRequest[]` (currently only pending requests)
+- `GET /api/interactions/pending`
+  - Response: `InteractionRequest[]` (all pending interactions across conversations)
+- `POST /api/interactions/:interaction_id/respond`
+  - Body: `{ "action": "accept" | "decline", "text": "optional" }`
+  - Returns `409` if the interaction was already resolved
+
 ## Messages
 
 - `POST /api/conversations/:conversation_id/messages`

@@ -25,6 +25,20 @@ export type ConversationEvent = {
   payload: unknown;
 };
 
+export type InteractionRequest = {
+  id: Uuid;
+  conversation_id: Uuid;
+  kind: string;
+  status: "pending" | "resolved";
+  payload: unknown;
+  created_at_ms: number;
+  timeout_ms: number;
+  default_action: string;
+  resolved_at_ms: number | null;
+  resolved_by: string | null;
+  response: unknown | null;
+};
+
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";
 
 export function apiBase(): string {
@@ -83,5 +97,20 @@ export function postUserMessage(conversationId: Uuid, text: string): Promise<Con
   return jsonFetch<ConversationEvent>(`/api/conversations/${conversationId}/messages`, {
     method: "POST",
     body: JSON.stringify({ text }),
+  });
+}
+
+export function listPendingInteractions(conversationId: Uuid): Promise<InteractionRequest[]> {
+  return jsonFetch<InteractionRequest[]>(`/api/conversations/${conversationId}/interactions`);
+}
+
+export function respondInteraction(
+  interactionId: Uuid,
+  action: string,
+  text?: string,
+): Promise<{ status: string }> {
+  return jsonFetch<{ status: string }>(`/api/interactions/${interactionId}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ action, text }),
   });
 }

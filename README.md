@@ -47,6 +47,20 @@ If you run the daemon on a different address, set:
 VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 ```
 
+## Respond to interaction requests (terminal)
+
+List pending interactions (across all conversations):
+
+```sh
+cargo run -- interactions list
+```
+
+Respond:
+
+```sh
+cargo run -- interactions respond <INTERACTION_ID> --action accept
+```
+
 ## Configuration
 
 The daemon can be configured via CLI flags or environment variables:
@@ -54,6 +68,10 @@ The daemon can be configured via CLI flags or environment variables:
 - `CODEX_WEB_LISTEN` (default `127.0.0.1:8787`)
 - `CODEX_WEB_DB_PATH` (default `~/.codex-web/codex-web.sqlite`)
 - `CODEX_WEB_STATIC_DIR` (optional; serve prebuilt UI assets)
+- `CODEX_WEB_INTERACTION_TIMEOUT_MS` (default `30000`)
+- `CODEX_WEB_INTERACTION_DEFAULT_ACTION` (default `decline`)
+- `CODEX_WEB_CODEX_APPROVAL_POLICY` (default `never`)
+- `CODEX_WEB_CODEX_SANDBOX` (default `workspace-write`)
 - `RUST_LOG` (default `codex_web=info,tower_http=info`)
 
 ## Data storage

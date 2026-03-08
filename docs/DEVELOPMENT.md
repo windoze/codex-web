@@ -49,3 +49,11 @@ Expected:
 Expected:
 - The server invokes the `codex` CLI in that project directory.
 - The UI receives `run_status` events and then an `agent_message` event.
+
+## Interaction verification (Milestone 3)
+
+Interaction requests are emitted when the Codex CLI produces approval/elicitation events (e.g. `exec_approval_request`).
+
+Expected:
+- The UI shows an “Input required” panel with Accept/Decline actions.
+- If no UI is connected, codex-web auto-responds based on `CODEX_WEB_INTERACTION_DEFAULT_ACTION`.

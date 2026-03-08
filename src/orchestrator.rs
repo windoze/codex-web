@@ -1,4 +1,7 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -16,6 +19,9 @@ pub struct TurnContext {
     pub project_root: PathBuf,
     pub session_id: Option<String>,
     pub prompt: String,
+    pub ws_clients: Arc<AtomicUsize>,
+    pub interaction_timeout_ms: i64,
+    pub interaction_default_action: String,
 }
 
 pub async fn run_turn(ctx: TurnContext) {
@@ -48,9 +54,12 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         project_root,
         session_id,
         prompt,
+        ws_clients,
+        interaction_timeout_ms,
+        interaction_default_action,
     } = ctx;
 
-    let outcome = crate::codex::run_jsonl_events(
+    let outcome = crate::codex::run_jsonl_events_with_input(
         codex,
         CodexInvocation {
             project_root,
@@ -77,6 +86,25 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
                 }
 
                 Ok::<(), anyhow::Error>(())
+            }
+        },
+        |event| {
+            let db = db.clone();
+            let event_tx = event_tx.clone();
+            let ws_clients = ws_clients.clone();
+            let interaction_default_action = interaction_default_action.clone();
+            let event = event.clone();
+            async move {
+                handle_interaction_if_needed(
+                    &db,
+                    &event_tx,
+                    conversation_id,
+                    &event,
+                    &ws_clients,
+                    interaction_timeout_ms,
+                    &interaction_default_action,
+                )
+                .await
             }
         },
     )
@@ -127,6 +155,148 @@ fn agent_message_text(event: &Value) -> Option<String> {
     item.get("text").and_then(|v| v.as_str()).map(str::to_string)
 }
 
+async fn handle_interaction_if_needed(
+    db: &Db,
+    tx: &broadcast::Sender<ConversationEvent>,
+    conversation_id: Uuid,
+    event: &Value,
+    ws_clients: &Arc<AtomicUsize>,
+    timeout_ms: i64,
+    default_action: &str,
+) -> anyhow::Result<Option<String>> {
+    let kind = match event.get("type").and_then(|v| v.as_str()) {
+        Some(t @ ("exec_approval_request" | "apply_patch_approval_request" | "elicitation_request")) => t,
+        _ => return Ok(None),
+    };
+
+    let request = db
+        .create_interaction_request(conversation_id, kind, event, timeout_ms, default_action)
+        .await?;
+
+    emit(
+        db,
+        tx,
+        conversation_id,
+        "interaction_request",
+        &serde_json::json!({
+            "interaction_id": request.id,
+            "kind": request.kind,
+            "timeout_ms": request.timeout_ms,
+            "default_action": request.default_action,
+            "payload": request.payload,
+        }),
+    )
+    .await?;
+
+    let user_present = ws_clients.load(Ordering::Relaxed) > 0;
+    if !user_present {
+        return auto_resolve_interaction(db, tx, conversation_id, request.id, &request.kind, default_action).await;
+    }
+
+    db.set_run_status(conversation_id, crate::db::RunStatus::WaitingForInteraction)
+        .await?;
+    emit(
+        db,
+        tx,
+        conversation_id,
+        "run_status",
+        &serde_json::json!({ "status": "waiting_for_interaction" }),
+    )
+    .await?;
+
+    // Poll for a user-provided response (web or terminal), then fall back to default on timeout.
+    let start = tokio::time::Instant::now();
+    loop {
+        if start.elapsed().as_millis() as i64 >= timeout_ms {
+            break;
+        }
+
+        if let Some(current) = db.get_interaction_request(request.id).await? {
+            if current.status == crate::db::InteractionStatus::Resolved {
+                db.set_run_status(conversation_id, crate::db::RunStatus::Running)
+                    .await?;
+                emit(
+                    db,
+                    tx,
+                    conversation_id,
+                    "run_status",
+                    &serde_json::json!({ "status": "running" }),
+                )
+                .await?;
+                return Ok(response_to_stdin(&current.kind, current.response.as_ref()));
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    db.set_run_status(conversation_id, crate::db::RunStatus::Running)
+        .await?;
+    emit(
+        db,
+        tx,
+        conversation_id,
+        "run_status",
+        &serde_json::json!({ "status": "running" }),
+    )
+    .await?;
+
+    auto_resolve_interaction(db, tx, conversation_id, request.id, &request.kind, default_action).await
+}
+
+async fn auto_resolve_interaction(
+    db: &Db,
+    tx: &broadcast::Sender<ConversationEvent>,
+    conversation_id: Uuid,
+    interaction_id: Uuid,
+    kind: &str,
+    default_action: &str,
+) -> anyhow::Result<Option<String>> {
+    let response = serde_json::json!({ "action": default_action });
+    let resolved = db
+        .try_resolve_interaction(interaction_id, &response, "auto")
+        .await?;
+
+    if resolved {
+        emit(
+            db,
+            tx,
+            conversation_id,
+            "interaction_response",
+            &serde_json::json!({
+                "interaction_id": interaction_id,
+                "kind": kind,
+                "response": response,
+                "resolved_by": "auto",
+            }),
+        )
+        .await?;
+    }
+
+    Ok(response_to_stdin(kind, Some(&response)))
+}
+
+fn response_to_stdin(kind: &str, response: Option<&Value>) -> Option<String> {
+    match kind {
+        "exec_approval_request" | "apply_patch_approval_request" => {
+            let action = response
+                .and_then(|r| r.get("action"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("decline");
+            match action {
+                "accept" => Some("y\n".to_string()),
+                "decline" => Some("n\n".to_string()),
+                _ => Some("n\n".to_string()),
+            }
+        }
+        "elicitation_request" => response
+            .and_then(|r| r.get("text"))
+            .and_then(|v| v.as_str())
+            .map(|s| format!("{s}\n")),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +325,9 @@ mod tests {
             project_root: temp_dir.path().to_path_buf(),
             session_id: None,
             prompt: "hi".to_string(),
+            ws_clients: Arc::new(AtomicUsize::new(0)),
+            interaction_timeout_ms: 30_000,
+            interaction_default_action: "decline".to_string(),
         })
         .await;
 
@@ -177,6 +350,47 @@ mod tests {
             run.codex_session_id.as_deref(),
             Some("00000000-0000-0000-0000-000000000001")
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn auto_resolves_interaction_when_no_clients() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("orchestrator-interaction.sqlite3");
+        let db = Db::connect(&db_path).await?;
+
+        let project = db.create_project("p", temp_dir.path()).await?;
+        let convo = db.create_conversation(Some(project.id), "c").await?;
+        db.try_mark_run_running(convo.id).await?;
+
+        let (event_tx, _event_rx) = broadcast::channel(64);
+        let stub_events = vec![
+            serde_json::json!({"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000002"}),
+            serde_json::json!({"type":"exec_approval_request","call_id":"call_1","command":"echo hi"}),
+            serde_json::json!({"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}),
+        ];
+
+        run_turn(TurnContext {
+            db: db.clone(),
+            event_tx: event_tx.clone(),
+            codex: CodexRuntime::stub(stub_events),
+            conversation_id: convo.id,
+            project_root: temp_dir.path().to_path_buf(),
+            session_id: None,
+            prompt: "hi".to_string(),
+            ws_clients: Arc::new(AtomicUsize::new(0)),
+            interaction_timeout_ms: 1_000,
+            interaction_default_action: "decline".to_string(),
+        })
+        .await;
+
+        let pending = db.list_pending_interactions(convo.id).await?;
+        assert_eq!(pending.len(), 0);
+
+        let events = db.list_events_after(convo.id, 0, 1000).await?;
+        assert!(events.iter().any(|e| e.event_type == "interaction_request"));
+        assert!(events.iter().any(|e| e.event_type == "interaction_response"));
 
         Ok(())
     }

@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use anyhow::Context;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
@@ -18,6 +21,9 @@ pub struct AppState {
     pub db: Db,
     pub event_tx: broadcast::Sender<crate::db::ConversationEvent>,
     pub codex: crate::codex::CodexRuntime,
+    pub ws_clients: Arc<AtomicUsize>,
+    pub interaction_timeout_ms: i64,
+    pub interaction_default_action: String,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -25,11 +31,19 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let db = Db::connect(&config.db_path).await?;
     let (event_tx, _rx) = broadcast::channel(1024);
+    let ws_clients = Arc::new(AtomicUsize::new(0));
     let app = build_router(
         AppState {
             db,
             event_tx,
-            codex: crate::codex::CodexRuntime::real(),
+            codex: crate::codex::CodexRuntime::Real(crate::codex::CodexReal {
+                ask_for_approval: config.codex_ask_for_approval.clone(),
+                sandbox: config.codex_sandbox.clone(),
+                skip_git_repo_check: true,
+            }),
+            ws_clients,
+            interaction_timeout_ms: config.interaction_timeout_ms,
+            interaction_default_action: config.interaction_default_action.clone(),
         },
         config.static_dir.as_deref(),
     );
@@ -81,7 +95,12 @@ async fn ws(
     State(state): State<AppState>,
 ) -> impl axum::response::IntoResponse {
     let rx = state.event_tx.subscribe();
-    ws.on_upgrade(move |socket| ws_loop(socket, q.conversation_id, rx))
+    let ws_clients = state.ws_clients.clone();
+    ws_clients.fetch_add(1, Ordering::Relaxed);
+    ws.on_upgrade(move |socket| async move {
+        ws_loop(socket, q.conversation_id, rx).await;
+        ws_clients.fetch_sub(1, Ordering::Relaxed);
+    })
 }
 
 async fn ws_loop(
@@ -133,6 +152,9 @@ mod tests {
                 db,
                 event_tx,
                 codex: crate::codex::CodexRuntime::stub(vec![]),
+                ws_clients: Arc::new(AtomicUsize::new(0)),
+                interaction_timeout_ms: 30_000,
+                interaction_default_action: "decline".to_string(),
             },
             None,
         );

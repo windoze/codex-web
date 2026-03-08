@@ -1,3 +1,6 @@
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -5,15 +8,19 @@ use tower::ServiceExt;
 use codex_web::server::{build_router, AppState};
 
 #[tokio::test]
-async fn posting_message_runs_codex_stub_and_persists_agent_message() {
+async fn interaction_can_be_resolved_via_api() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let db_path = temp_dir.path().join("codex_stub.sqlite3");
+    let db_path = temp_dir.path().join("interaction_flow.sqlite3");
     let db = codex_web::db::Db::connect(&db_path).await.expect("db connect");
     let (event_tx, _rx) = tokio::sync::broadcast::channel(128);
 
+    // Simulate a "present" user so the orchestrator waits instead of auto-responding.
+    let ws_clients = Arc::new(AtomicUsize::new(1));
+
     let codex = codex_web::codex::CodexRuntime::stub(vec![
-        serde_json::json!({"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}),
-        serde_json::json!({"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello from stub"}}),
+        serde_json::json!({"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000010"}),
+        serde_json::json!({"type":"exec_approval_request","call_id":"call_1","command":"echo hi"}),
+        serde_json::json!({"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"after approval"}}),
     ]);
 
     let app = build_router(
@@ -21,8 +28,8 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
             db,
             event_tx,
             codex,
-            ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-            interaction_timeout_ms: 30_000,
+            ws_clients,
+            interaction_timeout_ms: 5_000,
             interaction_default_action: "decline".to_string(),
         },
         None,
@@ -56,7 +63,7 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
         .body(Body::from(
             serde_json::json!({
                 "project_id": project_id,
-                "title": "Stub Conversation"
+                "title": "Interaction Conversation"
             })
             .to_string(),
         ))
@@ -74,7 +81,7 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
         .unwrap()
         .to_string();
 
-    // Post message (triggers background stub turn).
+    // Trigger the turn.
     let req = Request::builder()
         .method("POST")
         .uri(format!(
@@ -86,13 +93,49 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Poll events until we see the derived agent_message.
-    let mut saw_agent = false;
-    for _ in 0..25 {
+    // Wait for the pending interaction to appear.
+    let mut interaction_id: Option<String> = None;
+    for _ in 0..50 {
         let req = Request::builder()
             .method("GET")
             .uri(format!(
-                "/api/conversations/{conversation_id}/events?after=0&limit=100"
+                "/api/conversations/{conversation_id}/interactions"
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let pending: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        if let Some(id) = pending.get(0).and_then(|v| v.get("id")).and_then(|v| v.as_str()) {
+            interaction_id = Some(id.to_string());
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let interaction_id = interaction_id.expect("interaction id");
+
+    // Resolve it.
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/interactions/{interaction_id}/respond"
+        ))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::json!({ "action": "accept" }).to_string()))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Turn should complete and eventually produce agent_message.
+    let mut saw_agent = false;
+    for _ in 0..100 {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/api/conversations/{conversation_id}/events?after=0&limit=200"
             ))
             .body(Body::empty())
             .unwrap();
@@ -108,5 +151,6 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert!(saw_agent, "expected agent_message to be persisted");
+    assert!(saw_agent, "expected agent_message after resolving interaction");
 }
+

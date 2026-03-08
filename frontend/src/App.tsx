@@ -2,12 +2,15 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Conversation,
   ConversationEvent,
+  InteractionRequest,
   apiBase,
   createConversation,
   createProject,
   listConversations,
   listEvents,
+  listPendingInteractions,
   postUserMessage,
+  respondInteraction,
   wsBase,
 } from "./lib/api";
 
@@ -39,6 +42,7 @@ export default function App() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [pendingInteractions, setPendingInteractions] = useState<InteractionRequest[]>([]);
 
   const [newProjectPath, setNewProjectPath] = useState("");
   const [newConversationTitle, setNewConversationTitle] = useState("");
@@ -56,7 +60,7 @@ export default function App() {
     }
     return status;
   }, [events]);
-  const isConversationRunning = runStatus === "running";
+  const isConversationRunning = runStatus === "running" || runStatus === "waiting_for_interaction";
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -161,6 +165,34 @@ export default function App() {
   }, [activeConversationId]);
 
   useEffect(() => {
+    if (!activeConversationId) {
+      setPendingInteractions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refresh() {
+      try {
+        const pending = await listPendingInteractions(activeConversationId);
+        if (!cancelled) setPendingInteractions(pending);
+      } catch {
+        // ignore
+      }
+    }
+
+    refresh().catch(() => {});
+    const timer = window.setInterval(() => {
+      refresh().catch(() => {});
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeConversationId]);
+
+  useEffect(() => {
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight });
   }, [items.length]);
 
@@ -197,6 +229,19 @@ export default function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function onRespond(interactionId: string, action: string) {
+    setError(null);
+    try {
+      await respondInteraction(interactionId, action);
+      if (activeConversationId) {
+        const pending = await listPendingInteractions(activeConversationId);
+        setPendingInteractions(pending);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -255,6 +300,28 @@ export default function App() {
 
       <main className="chat">
         {error ? <div className="error">{error}</div> : null}
+
+        {pendingInteractions.length > 0 ? (
+          <div className="interactions">
+            <div className="interactionsTitle">Input required</div>
+            {pendingInteractions.map((r) => (
+              <div key={r.id} className="interactionCard">
+                <div className="interactionKind">{r.kind}</div>
+                <div className="interactionBody">
+                  <pre className="interactionPayload">{JSON.stringify(r.payload, null, 2)}</pre>
+                </div>
+                <div className="interactionActions">
+                  <button className="button" type="button" onClick={() => onRespond(r.id, "accept")}>
+                    Accept
+                  </button>
+                  <button className="button" type="button" onClick={() => onRespond(r.id, "decline")}>
+                    Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="messages" ref={messageListRef}>
           {activeConversationId ? null : (

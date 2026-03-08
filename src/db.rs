@@ -309,6 +309,24 @@ impl Db {
         Ok(result.rows_affected() == 1)
     }
 
+    pub async fn set_run_status(&self, conversation_id: Uuid, status: RunStatus) -> anyhow::Result<()> {
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            UPDATE runs
+            SET status = ?2, updated_at_ms = ?3
+            WHERE conversation_id = ?1
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .bind(status.as_str())
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .context("set run status")?;
+        Ok(())
+    }
+
     pub async fn mark_run_completed(
         &self,
         conversation_id: Uuid,
@@ -338,6 +356,152 @@ impl Db {
         .await
         .context("mark run completed")?;
         Ok(())
+    }
+
+    pub async fn create_interaction_request(
+        &self,
+        conversation_id: Uuid,
+        kind: &str,
+        payload: &Value,
+        timeout_ms: i64,
+        default_action: &str,
+    ) -> anyhow::Result<InteractionRequest> {
+        let now = now_ms();
+        let req = InteractionRequest {
+            id: Uuid::new_v4(),
+            conversation_id,
+            kind: kind.to_string(),
+            status: InteractionStatus::Pending,
+            payload: payload.clone(),
+            created_at_ms: now,
+            timeout_ms,
+            default_action: default_action.to_string(),
+            resolved_at_ms: None,
+            resolved_by: None,
+            response: None,
+        };
+
+        let payload_json = serde_json::to_string(&req.payload).context("serialize payload")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO interaction_requests
+              (id, conversation_id, kind, status, payload_json, created_at_ms, timeout_ms, default_action, resolved_at_ms, resolved_by, response_json)
+            VALUES
+              (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, NULL)
+            "#,
+        )
+        .bind(req.id.to_string())
+        .bind(req.conversation_id.to_string())
+        .bind(&req.kind)
+        .bind(req.status.as_str())
+        .bind(payload_json)
+        .bind(req.created_at_ms)
+        .bind(req.timeout_ms)
+        .bind(&req.default_action)
+        .execute(&self.pool)
+        .await
+        .context("insert interaction_request")?;
+
+        Ok(req)
+    }
+
+    pub async fn get_interaction_request(
+        &self,
+        request_id: Uuid,
+    ) -> anyhow::Result<Option<InteractionRequest>> {
+        let row = sqlx::query_as::<_, InteractionRequestRow>(
+            r#"
+            SELECT
+              id, conversation_id, kind, status, payload_json, created_at_ms, timeout_ms,
+              default_action, resolved_at_ms, resolved_by, response_json
+            FROM interaction_requests
+            WHERE id = ?1
+            "#,
+        )
+        .bind(request_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .context("get interaction_request")?;
+
+        match row {
+            Some(row) => Ok(Some(InteractionRequest::try_from(row)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn list_pending_interactions(
+        &self,
+        conversation_id: Uuid,
+    ) -> anyhow::Result<Vec<InteractionRequest>> {
+        let rows = sqlx::query_as::<_, InteractionRequestRow>(
+            r#"
+            SELECT
+              id, conversation_id, kind, status, payload_json, created_at_ms, timeout_ms,
+              default_action, resolved_at_ms, resolved_by, response_json
+            FROM interaction_requests
+            WHERE conversation_id = ?1 AND status = 'pending'
+            ORDER BY created_at_ms ASC
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .context("list pending interactions")?;
+
+        rows.into_iter()
+            .map(InteractionRequest::try_from)
+            .collect::<anyhow::Result<Vec<_>>>()
+    }
+
+    pub async fn list_all_pending_interactions(&self) -> anyhow::Result<Vec<InteractionRequest>> {
+        let rows = sqlx::query_as::<_, InteractionRequestRow>(
+            r#"
+            SELECT
+              id, conversation_id, kind, status, payload_json, created_at_ms, timeout_ms,
+              default_action, resolved_at_ms, resolved_by, response_json
+            FROM interaction_requests
+            WHERE status = 'pending'
+            ORDER BY created_at_ms ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("list all pending interactions")?;
+
+        rows.into_iter()
+            .map(InteractionRequest::try_from)
+            .collect::<anyhow::Result<Vec<_>>>()
+    }
+
+    pub async fn try_resolve_interaction(
+        &self,
+        request_id: Uuid,
+        response: &Value,
+        resolved_by: &str,
+    ) -> anyhow::Result<bool> {
+        let now = now_ms();
+        let response_json = serde_json::to_string(response).context("serialize response")?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE interaction_requests
+            SET status = 'resolved',
+                resolved_at_ms = ?2,
+                resolved_by = ?3,
+                response_json = ?4
+            WHERE id = ?1 AND status = 'pending'
+            "#,
+        )
+        .bind(request_id.to_string())
+        .bind(now)
+        .bind(resolved_by)
+        .bind(response_json)
+        .execute(&self.pool)
+        .await
+        .context("resolve interaction_request")?;
+
+        Ok(result.rows_affected() == 1)
     }
 
     async fn ensure_run_row(&self, conversation_id: Uuid) -> anyhow::Result<()> {
@@ -436,6 +600,49 @@ pub struct Run {
     pub active_pid: Option<i64>,
     pub metadata: Value,
     pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractionStatus {
+    Pending,
+    Resolved,
+}
+
+impl InteractionStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            InteractionStatus::Pending => "pending",
+            InteractionStatus::Resolved => "resolved",
+        }
+    }
+}
+
+impl std::str::FromStr for InteractionStatus {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(InteractionStatus::Pending),
+            "resolved" => Ok(InteractionStatus::Resolved),
+            other => Err(anyhow::anyhow!("unknown interaction status: {other}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteractionRequest {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub kind: String,
+    pub status: InteractionStatus,
+    pub payload: Value,
+    pub created_at_ms: i64,
+    pub timeout_ms: i64,
+    pub default_action: String,
+    pub resolved_at_ms: Option<i64>,
+    pub resolved_by: Option<String>,
+    pub response: Option<Value>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -544,6 +751,51 @@ impl TryFrom<RunRow> for Run {
     }
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct InteractionRequestRow {
+    id: String,
+    conversation_id: String,
+    kind: String,
+    status: String,
+    payload_json: String,
+    created_at_ms: i64,
+    timeout_ms: i64,
+    default_action: String,
+    resolved_at_ms: Option<i64>,
+    resolved_by: Option<String>,
+    response_json: Option<String>,
+}
+
+impl TryFrom<InteractionRequestRow> for InteractionRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(row: InteractionRequestRow) -> Result<Self, Self::Error> {
+        let id = Uuid::parse_str(&row.id).context("parse interaction id")?;
+        let conversation_id =
+            Uuid::parse_str(&row.conversation_id).context("parse interaction conversation_id")?;
+        let status = row.status.parse()?;
+        let payload = serde_json::from_str(&row.payload_json).context("parse interaction payload")?;
+        let response = match row.response_json {
+            Some(s) => Some(serde_json::from_str(&s).context("parse interaction response")?),
+            None => None,
+        };
+
+        Ok(Self {
+            id,
+            conversation_id,
+            kind: row.kind,
+            status,
+            payload,
+            created_at_ms: row.created_at_ms,
+            timeout_ms: row.timeout_ms,
+            default_action: row.default_action,
+            resolved_at_ms: row.resolved_at_ms,
+            resolved_by: row.resolved_by,
+            response,
+        })
+    }
+}
+
 fn now_ms() -> i64 {
     let elapsed: Duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -596,6 +848,40 @@ mod tests {
 
         let run = db.get_run(conversation.id).await?;
         assert_eq!(run.status, RunStatus::Idle);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn interaction_requests_roundtrip() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir().context("create temp dir")?;
+        let db_path = temp_dir.path().join("codex-web-test-interactions.sqlite3");
+        let db = Db::connect(&db_path).await?;
+
+        let project = db.create_project("p", temp_dir.path()).await?;
+        let conversation = db.create_conversation(Some(project.id), "c").await?;
+
+        let req = db
+            .create_interaction_request(
+                conversation.id,
+                "exec_approval_request",
+                &serde_json::json!({"call_id":"call_1","command":"echo hi"}),
+                10_000,
+                "decline",
+            )
+            .await?;
+
+        let pending = db.list_pending_interactions(conversation.id).await?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, req.id);
+
+        let resolved = db
+            .try_resolve_interaction(req.id, &serde_json::json!({"action":"decline"}), "test")
+            .await?;
+        assert!(resolved);
+
+        let pending = db.list_pending_interactions(conversation.id).await?;
+        assert_eq!(pending.len(), 0);
+
         Ok(())
     }
 }
