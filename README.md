@@ -49,6 +49,20 @@ VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 
 In the UI, click “New conversation…” to pick a project directory (the picker starts at your home directory).
 
+## Single-binary UI (bundled assets)
+
+To build a self-contained `codex-web` binary that serves the web UI without `CODEX_WEB_STATIC_DIR`,
+compile with the `bundled-ui` feature:
+
+```sh
+cargo build --release --features bundled-ui
+./target/release/codex-web serve --listen 127.0.0.1:8787
+```
+
+Notes:
+- Requires Node.js + npm at build time (the build script runs `npm run build` in `frontend/`).
+- If you already built the UI and want to skip the build script, set `CODEX_WEB_SKIP_UI_BUILD=1`.
+
 ## Respond to interaction requests (terminal)
 
 List pending interactions (across all conversations):

@@ -2,20 +2,36 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
+#[cfg(feature = "bundled-ui")]
+use axum::body::Body;
+#[cfg(feature = "bundled-ui")]
+use axum::extract::OriginalUri;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
+#[cfg(feature = "bundled-ui")]
+use axum::http::{HeaderValue, StatusCode};
 use axum::http::{Method, header};
+#[cfg(feature = "bundled-ui")]
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
 use tokio::sync::Semaphore;
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
 use crate::db::Db;
+
+#[cfg(feature = "bundled-ui")]
+use rust_embed::RustEmbed;
+
+#[cfg(feature = "bundled-ui")]
+#[derive(RustEmbed)]
+#[folder = "frontend/dist"]
+struct BundledUiAssets;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -83,8 +99,13 @@ pub fn build_router(state: AppState, static_dir: Option<&std::path::Path>) -> Ro
         .layer(cors);
 
     if let Some(dir) = static_dir {
-        let service = ServeDir::new(dir);
+        let service = ServeDir::new(dir).not_found_service(ServeFile::new(dir.join("index.html")));
         app = app.nest_service("/", service);
+    } else {
+        #[cfg(feature = "bundled-ui")]
+        {
+            app = app.fallback(get(serve_bundled_ui));
+        }
     }
 
     app
@@ -142,6 +163,51 @@ fn init_tracing() {
         .with_env_filter(env_filter)
         .with_target(false)
         .try_init();
+}
+
+#[cfg(feature = "bundled-ui")]
+async fn serve_bundled_ui(OriginalUri(uri): OriginalUri) -> axum::response::Response {
+    let mut path = uri.path().trim_start_matches('/');
+    if path.is_empty() {
+        path = "index.html";
+    }
+
+    // Basic path traversal hardening for safety.
+    if path.contains("..") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let is_asset_request = path.contains('.');
+    let asset = BundledUiAssets::get(path).or_else(|| {
+        if is_asset_request {
+            None
+        } else {
+            BundledUiAssets::get("index.html")
+        }
+    });
+
+    let Some(asset) = asset else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let mime = mime_guess::from_path(path).first_or_octet_stream();
+    let mut res = axum::response::Response::new(Body::from(asset.data.into_owned()));
+    if let Ok(ct) = HeaderValue::from_str(mime.as_ref()) {
+        res.headers_mut().insert(header::CONTENT_TYPE, ct);
+    }
+
+    // Aggressive caching for hashed assets, conservative for HTML.
+    let cache = if path == "index.html" {
+        "no-cache"
+    } else if path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "public, max-age=3600"
+    };
+    res.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+
+    res
 }
 
 #[cfg(test)]
