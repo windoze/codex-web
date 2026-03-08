@@ -50,6 +50,36 @@ export function isTurnInProgress(runStatus: string | null): boolean {
   return runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
 }
 
+export function updateConversationListRunStatus(
+  conversations: ConversationListItem[],
+  conversationId: string,
+  status: string,
+  updatedAtMs?: number,
+): ConversationListItem[] {
+  const nextUpdatedAt = typeof updatedAtMs === "number" ? updatedAtMs : null;
+  let changed = false;
+
+  const next = conversations.map((c) => {
+    if (c.id !== conversationId) return c;
+
+    const mergedUpdatedAt =
+      nextUpdatedAt != null ? Math.max(c.updated_at_ms, nextUpdatedAt) : c.updated_at_ms;
+
+    if (c.run_status === status && mergedUpdatedAt === c.updated_at_ms) {
+      return c;
+    }
+
+    changed = true;
+    return {
+      ...c,
+      run_status: status,
+      updated_at_ms: mergedUpdatedAt,
+    };
+  });
+
+  return changed ? next : conversations;
+}
+
 export type TokenUsage = {
   cached_input_tokens: number;
   input_tokens: number;
@@ -614,6 +644,14 @@ export default function App() {
           const e = JSON.parse(msg.data as string) as ConversationEvent;
           if (e.conversation_id !== conversationId) return;
           mergeEvents([e]);
+          if (e.event_type === "run_status") {
+            const status = (e.payload as { status?: unknown } | null)?.status;
+            if (typeof status === "string") {
+              setConversations((prev) =>
+                updateConversationListRunStatus(prev, conversationId, status, e.ts_ms),
+              );
+            }
+          }
         } catch {
           // ignore
         }
@@ -631,6 +669,13 @@ export default function App() {
       .then((initialEvents) => {
         if (cancelled) return;
         setEvents(initialEvents);
+        const initialRunStatus = deriveRunStatusFromEvents(initialEvents);
+        if (initialRunStatus) {
+          const updatedAt = initialEvents.at(-1)?.ts_ms;
+          setConversations((prev) =>
+            updateConversationListRunStatus(prev, conversationId, initialRunStatus, updatedAt),
+          );
+        }
         connectWs().catch(() => {});
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
@@ -752,11 +797,23 @@ export default function App() {
     if (isConversationRunning) return;
     setError(null);
     setIsSending(true);
+    const previousRunStatus = activeConversation?.run_status ?? null;
+    setConversations((prev) => updateConversationListRunStatus(prev, activeConversationId, "running"));
     try {
       await postUserMessage(activeConversationId, messageText);
       setMessageText("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
+      try {
+        const list = await listConversations();
+        setConversations(list);
+      } catch {
+        if (previousRunStatus) {
+          setConversations((prev) =>
+            updateConversationListRunStatus(prev, activeConversationId, previousRunStatus),
+          );
+        }
+      }
     } finally {
       setIsSending(false);
     }

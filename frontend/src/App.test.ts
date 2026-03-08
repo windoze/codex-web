@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Conversation, ConversationEvent, Project } from "./lib/api";
+import type { Conversation, ConversationEvent, ConversationListItem, Project } from "./lib/api";
 import {
   conversationTitleForList,
   deriveRunStatusFromEvents,
@@ -7,6 +7,7 @@ import {
   eventsToChatItems,
   isTurnInProgress,
   pathBasename,
+  updateConversationListRunStatus,
 } from "./App";
 
 function e(id: number, event_type: string, payload: unknown, ts_ms = 0): ConversationEvent {
@@ -201,5 +202,31 @@ describe("ui helpers", () => {
     expect(isTurnInProgress("queued")).toBe(true);
     expect(isTurnInProgress("running")).toBe(true);
     expect(isTurnInProgress("waiting_for_interaction")).toBe(true);
+  });
+
+  it("updates list run_status so spinners can show even when not selected", () => {
+    const a: ConversationListItem = {
+      id: "00000000-0000-0000-0000-000000000010",
+      project_id: null,
+      title: "A",
+      archived_at_ms: null,
+      created_at_ms: 0,
+      updated_at_ms: 1,
+      run_status: "idle",
+    };
+    const b: ConversationListItem = {
+      id: "00000000-0000-0000-0000-000000000011",
+      project_id: null,
+      title: "B",
+      archived_at_ms: null,
+      created_at_ms: 0,
+      updated_at_ms: 2,
+      run_status: "idle",
+    };
+
+    const next = updateConversationListRunStatus([a, b], a.id, "running", 123);
+    expect(next[0].run_status).toBe("running");
+    expect(next[0].updated_at_ms).toBe(123);
+    expect(next[1]).toEqual(b);
   });
 });
