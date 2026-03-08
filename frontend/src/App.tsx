@@ -498,7 +498,6 @@ export default function App() {
         <div className="chatHeader">
           <div className="chatTitle">
             {activeConversation ? activeConversation.title : "No conversation"}
-            {isConversationRunning ? <span className="spinner" title="Turn in progress" /> : null}
             {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
           </div>
           <div className="chatActions">
@@ -569,13 +568,22 @@ export default function App() {
         </div>
 
         <form className="composer" onSubmit={onSendMessage}>
-          <input
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            className="input"
-            placeholder={activeConversationId ? "Send a message…" : "Create/select a conversation first"}
-            disabled={!activeConversationId || isSending || isConversationRunning}
-          />
+          <div className="composerInputWrap">
+            {isConversationRunning ? (
+              <span
+                className="spinner spinnerLarge composerSpinner"
+                aria-label="Turn in progress"
+                title="Turn in progress"
+              />
+            ) : null}
+            <input
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              className={isConversationRunning ? "input composerInput hasSpinner" : "input composerInput"}
+              placeholder={activeConversationId ? "Send a message…" : "Create/select a conversation first"}
+              disabled={!activeConversationId || isSending || isConversationRunning}
+            />
+          </div>
           <button
             className="button"
             type="submit"

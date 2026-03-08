@@ -178,6 +178,14 @@ body {
   animation: spin 1s linear infinite;
 }
 
+.spinnerLarge {
+  width: 16px;
+  height: 16px;
+  border-width: 3px;
+  border-color: rgba(0, 120, 255, 0.8);
+  border-top-color: transparent;
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -321,4 +329,20 @@ body {
   display: grid;
   grid-template-columns: 1fr 100px;
   gap: 10px;
+}
+
+.composerInputWrap {
+  position: relative;
+}
+
+.composerSpinner {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.composerInput.hasSpinner {
+  padding-left: 42px;
 }
