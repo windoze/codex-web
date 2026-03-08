@@ -17,6 +17,10 @@ export type Conversation = {
   archived_at_ms: number | null;
 };
 
+export type ConversationListItem = Conversation & {
+  run_status: string;
+};
+
 export type ConversationEvent = {
   id: number;
   conversation_id: Uuid;
@@ -80,8 +84,8 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function listConversations(): Promise<Conversation[]> {
-  return jsonFetch<Conversation[]>("/api/conversations");
+export function listConversations(): Promise<ConversationListItem[]> {
+  return jsonFetch<ConversationListItem[]>("/api/conversations");
 }
 
 export function listProjects(): Promise<Project[]> {

@@ -4,8 +4,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -204,6 +204,30 @@ impl Db {
         Ok(rows.into_iter().map(Conversation::from).collect())
     }
 
+    pub async fn list_conversation_list_items(&self) -> anyhow::Result<Vec<ConversationListItem>> {
+        let rows = sqlx::query_as::<_, ConversationListRow>(
+            r#"
+            SELECT
+              c.id,
+              c.project_id,
+              c.title,
+              c.created_at_ms,
+              c.updated_at_ms,
+              c.archived_at_ms,
+              r.status AS run_status
+            FROM conversations c
+            LEFT JOIN runs r ON r.conversation_id = c.id
+            WHERE c.archived_at_ms IS NULL
+            ORDER BY c.updated_at_ms DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("list conversation list items")?;
+
+        Ok(rows.into_iter().map(ConversationListItem::from).collect())
+    }
+
     pub async fn get_conversation(&self, conversation_id: Uuid) -> anyhow::Result<Conversation> {
         let row = sqlx::query_as::<_, ConversationRow>(
             r#"
@@ -390,7 +414,11 @@ impl Db {
         Ok(result.rows_affected() == 1)
     }
 
-    pub async fn set_run_status(&self, conversation_id: Uuid, status: RunStatus) -> anyhow::Result<()> {
+    pub async fn set_run_status(
+        &self,
+        conversation_id: Uuid,
+        status: RunStatus,
+    ) -> anyhow::Result<()> {
         let now = now_ms();
         sqlx::query(
             r#"
@@ -623,6 +651,13 @@ pub struct Conversation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationListItem {
+    #[serde(flatten)]
+    pub conversation: Conversation,
+    pub run_status: RunStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationEvent {
     pub id: i64,
     pub conversation_id: Uuid,
@@ -760,6 +795,17 @@ struct ConversationRow {
     archived_at_ms: Option<i64>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct ConversationListRow {
+    id: String,
+    project_id: Option<String>,
+    title: String,
+    created_at_ms: i64,
+    updated_at_ms: i64,
+    archived_at_ms: Option<i64>,
+    run_status: Option<String>,
+}
+
 impl From<ConversationRow> for Conversation {
     fn from(row: ConversationRow) -> Self {
         Self {
@@ -772,6 +818,32 @@ impl From<ConversationRow> for Conversation {
             created_at_ms: row.created_at_ms,
             updated_at_ms: row.updated_at_ms,
             archived_at_ms: row.archived_at_ms,
+        }
+    }
+}
+
+impl From<ConversationListRow> for ConversationListItem {
+    fn from(row: ConversationListRow) -> Self {
+        let run_status = row
+            .run_status
+            .as_deref()
+            .unwrap_or("idle")
+            .parse()
+            .unwrap_or(RunStatus::Idle);
+
+        Self {
+            conversation: Conversation {
+                id: Uuid::parse_str(&row.id).unwrap_or_else(|_| Uuid::nil()),
+                project_id: row
+                    .project_id
+                    .and_then(|p| Uuid::parse_str(&p).ok())
+                    .filter(|p| !p.is_nil()),
+                title: row.title,
+                created_at_ms: row.created_at_ms,
+                updated_at_ms: row.updated_at_ms,
+                archived_at_ms: row.archived_at_ms,
+            },
+            run_status,
         }
     }
 }
@@ -792,7 +864,8 @@ impl TryFrom<ConversationEventRow> for ConversationEvent {
     fn try_from(row: ConversationEventRow) -> Result<Self, Self::Error> {
         let conversation_id =
             Uuid::parse_str(&row.conversation_id).context("parse conversation_id")?;
-        let payload: Value = serde_json::from_str(&row.payload_json).context("parse payload_json")?;
+        let payload: Value =
+            serde_json::from_str(&row.payload_json).context("parse payload_json")?;
         Ok(Self {
             id: row.id,
             conversation_id,
@@ -858,7 +931,8 @@ impl TryFrom<InteractionRequestRow> for InteractionRequest {
         let conversation_id =
             Uuid::parse_str(&row.conversation_id).context("parse interaction conversation_id")?;
         let status = row.status.parse()?;
-        let payload = serde_json::from_str(&row.payload_json).context("parse interaction payload")?;
+        let payload =
+            serde_json::from_str(&row.payload_json).context("parse interaction payload")?;
         let response = match row.response_json {
             Some(s) => Some(serde_json::from_str(&s).context("parse interaction response")?),
             None => None,

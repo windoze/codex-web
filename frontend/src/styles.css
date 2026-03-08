@@ -133,6 +133,9 @@ body {
 .conversationTitle {
   font-size: 13px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conversationTopRow {
@@ -140,6 +143,20 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+}
+
+.conversationTitleWrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.conversationSpinner {
+  flex: 0 0 auto;
+  border-color: rgba(0, 120, 255, 0.8);
+  border-top-color: transparent;
 }
 
 .conversationTime {

@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Conversation,
+  ConversationListItem,
   ConversationEvent,
   InteractionRequest,
   Project,
@@ -368,7 +369,7 @@ export function eventsToChatItems(
 }
 
 export default function App() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
@@ -406,13 +407,42 @@ export default function App() {
   const lastEventIdRef = useRef<number>(0);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function refreshConversations() {
+      try {
+        const list = await listConversations();
+        if (cancelled) return;
+        setConversations(list);
+        setActiveConversationId((prev) => {
+          if (!prev) return list[0]?.id ?? null;
+          if (list.some((c) => c.id === prev)) return prev;
+          return list[0]?.id ?? null;
+        });
+      } catch {
+        // ignore (polling should not spam errors)
+      }
+    }
+
     Promise.all([listConversations(), listProjects()])
       .then(([list, projectList]) => {
+        if (cancelled) return;
         setConversations(list);
         setProjects(projectList);
-        if (list.length > 0) setActiveConversationId((prev) => prev ?? list[0].id);
+        setActiveConversationId((prev) => prev ?? list[0]?.id ?? null);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+
+    // Keep the left-pane run indicators reasonably fresh even when the active conversation changes.
+    refreshConversations().catch(() => {});
+    const timer = window.setInterval(() => {
+      refreshConversations().catch(() => {});
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -682,7 +712,12 @@ export default function App() {
               type="button"
             >
               <div className="conversationTopRow">
-                <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
+                <div className="conversationTitleWrap">
+                  {isTurnInProgress(c.run_status) || (c.id === activeConversationId && isConversationRunning) ? (
+                    <span className="spinner conversationSpinner" aria-label="Turn in progress" title="Turn in progress" />
+                  ) : null}
+                  <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
+                </div>
                 <div className="conversationTime">{formatUpdatedAt(c.updated_at_ms)}</div>
               </div>
             </button>

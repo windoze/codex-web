@@ -3,13 +3,15 @@ use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 use codex_web::db::ConversationEvent;
-use codex_web::server::{build_router, AppState};
+use codex_web::server::{AppState, build_router};
 
 #[tokio::test]
 async fn projects_conversations_and_events_roundtrip() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let db_path = temp_dir.path().join("api.sqlite3");
-    let db = codex_web::db::Db::connect(&db_path).await.expect("db connect");
+    let db = codex_web::db::Db::connect(&db_path)
+        .await
+        .expect("db connect");
     let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(16);
 
     let app = build_router(
@@ -71,12 +73,29 @@ async fn projects_conversations_and_events_roundtrip() {
         .unwrap()
         .to_string();
 
+    // List conversations should include a run_status per item.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/conversations")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let conversations: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    let created = conversations
+        .iter()
+        .find(|c| c.get("id").and_then(|v| v.as_str()) == Some(&conversation_id))
+        .expect("created conversation present in list");
+    let run_status = created.get("run_status").and_then(|v| v.as_str()).unwrap();
+    assert!(!run_status.is_empty(), "expected non-empty run_status");
+
     // Post a user message -> should broadcast an event.
     let req = Request::builder()
         .method("POST")
-        .uri(format!(
-            "/api/conversations/{conversation_id}/messages"
-        ))
+        .uri(format!("/api/conversations/{conversation_id}/messages"))
         .header("content-type", "application/json")
         .body(Body::from(
             serde_json::json!({ "text": "hello" }).to_string(),
@@ -107,6 +126,10 @@ async fn projects_conversations_and_events_roundtrip() {
         .await
         .unwrap();
     let events: Vec<ConversationEvent> = serde_json::from_slice(&body).unwrap();
-    assert!(events.len() >= 2, "expected >= 2 events, got {}", events.len());
+    assert!(
+        events.len() >= 2,
+        "expected >= 2 events, got {}",
+        events.len()
+    );
     assert_eq!(events[0].id, event.id);
 }

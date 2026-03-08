@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::db::{Conversation, ConversationEvent, InteractionRequest, Project, Run};
+use crate::db::{
+    Conversation, ConversationEvent, ConversationListItem, InteractionRequest, Project, Run,
+};
 use crate::server::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -247,10 +249,10 @@ async fn create_conversation(
 
 async fn list_conversations(
     State(state): State<AppState>,
-) -> Result<Json<Vec<Conversation>>, ApiError> {
+) -> Result<Json<Vec<ConversationListItem>>, ApiError> {
     let conversations = state
         .db
-        .list_conversations()
+        .list_conversation_list_items()
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(conversations))

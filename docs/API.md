@@ -20,7 +20,7 @@ Base URL (default): `http://127.0.0.1:8787`
   - Body: `{ "project_id": "<uuid>|null", "title": "Optional" }`
   - Response: `Conversation`
 - `GET /api/conversations`
-  - Response: `Conversation[]`
+  - Response: `(Conversation & { run_status: string })[]`
 - `GET /api/conversations/:conversation_id`
   - Response: `{ "conversation": Conversation, "run": Run }`
 - `PATCH /api/conversations/:conversation_id`
