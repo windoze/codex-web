@@ -21,6 +21,9 @@ export type ChatItem = {
   key: string;
   role: "user" | "assistant" | "event";
   text: string;
+  format: "markdown" | "pre";
+  tone?: "normal" | "reasoning";
+  collapsedLines?: number;
 };
 
 export function deriveRunStatusFromEvents(events: ConversationEvent[]): string | null {
@@ -43,6 +46,38 @@ function extractText(payload: unknown): string | null {
   return typeof maybeText === "string" ? maybeText : null;
 }
 
+function asStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: string[] = [];
+  for (const part of value) {
+    if (typeof part !== "string") return null;
+    out.push(part);
+  }
+  return out;
+}
+
+function extractExecCommandEndPre(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const obj = payload as Record<string, unknown>;
+  if (obj.type !== "exec_command_end") return null;
+
+  const cmdParts = asStringArray(obj.command);
+  const cmd = cmdParts ? cmdParts.join(" ") : null;
+  const exitCode = typeof obj.exit_code === "number" ? obj.exit_code : null;
+
+  const aggregated = typeof obj.aggregated_output === "string" ? obj.aggregated_output : "";
+  const formatted = typeof obj.formatted_output === "string" ? obj.formatted_output : "";
+  const stdout = typeof obj.stdout === "string" ? obj.stdout : "";
+  const stderr = typeof obj.stderr === "string" ? obj.stderr : "";
+
+  const output = aggregated || formatted || [stdout, stderr].filter(Boolean).join("\n");
+  const header =
+    cmd && exitCode != null ? `$ ${cmd} (exit ${exitCode})` : cmd ? `$ ${cmd}` : exitCode != null ? `(exit ${exitCode})` : "";
+
+  if (!header && !output) return null;
+  return [header, output].filter(Boolean).join("\n");
+}
+
 function extractUserVisibleText(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const obj = payload as Record<string, unknown>;
@@ -60,7 +95,7 @@ function extractUserVisibleText(payload: unknown): string | null {
   return null;
 }
 
-function extractAgentMessageTextFromCodexEvent(payload: unknown): string | null {
+function extractCodexTextItem(payload: unknown): { text: string; itemType: string | null } | null {
   if (!payload || typeof payload !== "object") return null;
   const obj = payload as Record<string, unknown>;
 
@@ -70,8 +105,10 @@ function extractAgentMessageTextFromCodexEvent(payload: unknown): string | null 
   if (!item || typeof item !== "object") return null;
   const itemObj = item as Record<string, unknown>;
 
-  // Older/newer protocols may include a flattened `text` field on the item.
-  if (typeof itemObj.text === "string") return itemObj.text;
+  // Legacy shape: item has a top-level `text`.
+  if (typeof itemObj.text === "string") {
+    return { text: itemObj.text, itemType: typeof itemObj.type === "string" ? itemObj.type : null };
+  }
 
   if (itemObj.type !== "AgentMessage") return null;
 
@@ -91,19 +128,47 @@ function extractAgentMessageTextFromCodexEvent(payload: unknown): string | null 
     }
   }
 
-  return out ? out : null;
+  if (!out) return null;
+  return { text: out, itemType: "agent_message" };
+}
+
+function CollapsiblePre({ text, maxLines }: { text: string; maxLines?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const limit = typeof maxLines === "number" && maxLines > 0 ? maxLines : null;
+  const lines = text.split(/\r?\n/);
+  const shouldCollapse = limit != null && lines.length > limit;
+  const remaining = shouldCollapse && limit != null ? lines.length - limit : 0;
+
+  const displayText =
+    shouldCollapse && !expanded && limit != null
+      ? `${lines.slice(0, limit).join("\n")}\n… (${remaining} more lines)`
+      : text;
+
+  return (
+    <div className="preBlock">
+      <pre className="preText">{displayText}</pre>
+      {shouldCollapse ? (
+        <button className="linkButton" type="button" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function Bubble({ item }: { item: ChatItem }) {
-  if (item.role === "event") {
+  const toneClass = item.tone === "reasoning" ? "bubbleReasoning" : "";
+
+  if (item.format === "pre") {
     return (
-      <div className="bubble bubblePlain">
-        <pre className="eventText">{item.text}</pre>
+      <div className={`bubble bubblePlain ${toneClass}`.trim()}>
+        <CollapsiblePre text={item.text} maxLines={item.collapsedLines} />
       </div>
     );
   }
+
   return (
-    <div className="bubble bubbleMarkdown">
+    <div className={`bubble bubbleMarkdown ${toneClass}`.trim()}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
     </div>
   );
@@ -112,12 +177,23 @@ function Bubble({ item }: { item: ChatItem }) {
 function eventToChatItem(e: ConversationEvent): ChatItem {
   const text = extractText(e.payload);
   if (e.event_type === "user_message") {
-    return { key: `e-${e.id}`, role: "user", text: text ?? JSON.stringify(e.payload) };
+    return { key: `e-${e.id}`, role: "user", text: text ?? JSON.stringify(e.payload), format: "markdown" };
   }
   if (e.event_type === "agent_message") {
-    return { key: `e-${e.id}`, role: "assistant", text: text ?? JSON.stringify(e.payload) };
+    return {
+      key: `e-${e.id}`,
+      role: "assistant",
+      text: text ?? JSON.stringify(e.payload),
+      format: "markdown",
+      tone: "normal",
+    };
   }
-  return { key: `e-${e.id}`, role: "event", text: `${e.event_type}: ${JSON.stringify(e.payload)}` };
+  return {
+    key: `e-${e.id}`,
+    role: "event",
+    text: `${e.event_type}: ${JSON.stringify(e.payload)}`,
+    format: "pre",
+  };
 }
 
 export function eventsToChatItems(
@@ -144,7 +220,7 @@ export function eventsToChatItems(
       if (activeStreamIndex != null) {
         out[activeStreamIndex].text = finalText;
       } else {
-        out.push({ key: `e-${e.id}`, role: "assistant", text: finalText });
+        out.push({ key: `e-${e.id}`, role: "assistant", text: finalText, format: "markdown", tone: "normal" });
       }
       activeStreamIndex = null;
       activeStreamItemId = null;
@@ -153,7 +229,12 @@ export function eventsToChatItems(
 
     if (e.event_type === "codex_event") {
       if (opts.showRawCodexEvents) {
-        out.push({ key: `e-${e.id}`, role: "event", text: `codex_event: ${JSON.stringify(e.payload)}` });
+        out.push({
+          key: `e-${e.id}`,
+          role: "event",
+          text: `codex_event: ${JSON.stringify(e.payload)}`,
+          format: "pre",
+        });
         continue;
       }
 
@@ -161,13 +242,31 @@ export function eventsToChatItems(
       const payload = e.payload as Record<string, unknown> | null;
       const codexType = payload?.type;
 
+      const execEnd = extractExecCommandEndPre(e.payload);
+      if (execEnd) {
+        out.push({
+          key: `e-${e.id}`,
+          role: "assistant",
+          text: execEnd,
+          format: "pre",
+          collapsedLines: 8,
+        });
+        continue;
+      }
+
       if (codexType === "agent_message_content_delta") {
         const delta = payload?.delta;
         const itemId = payload?.item_id;
         if (typeof delta === "string") {
           const id = typeof itemId === "string" ? itemId : null;
           if (activeStreamIndex == null || (id != null && id !== activeStreamItemId)) {
-            out.push({ key: `stream-${id ?? e.id}`, role: "assistant", text: "" });
+            out.push({
+              key: `stream-${id ?? e.id}`,
+              role: "assistant",
+              text: "",
+              format: "markdown",
+              tone: "normal",
+            });
             activeStreamIndex = out.length - 1;
             activeStreamItemId = id;
           }
@@ -178,18 +277,51 @@ export function eventsToChatItems(
 
       // Fallback: if the backend didn't derive an `agent_message`, show the message text from
       // `item_completed` agent messages.
-      const maybeAgentText = extractAgentMessageTextFromCodexEvent(e.payload);
-      if (maybeAgentText) {
+      const maybeItemText = extractCodexTextItem(e.payload);
+      if (maybeItemText) {
         const next = events[i + 1];
-        if (next?.event_type !== "agent_message") {
-          out.push({ key: `e-${e.id}`, role: "assistant", text: maybeAgentText });
+
+        const itemType = maybeItemText.itemType ?? "";
+        if (itemType === "reasoning") {
+          out.push({
+            key: `e-${e.id}`,
+            role: "assistant",
+            text: maybeItemText.text,
+            format: "markdown",
+            tone: "reasoning",
+          });
+          continue;
         }
+
+        if (itemType === "command_execution" || itemType === "commandExecution") {
+          out.push({
+            key: `e-${e.id}`,
+            role: "assistant",
+            text: maybeItemText.text,
+            format: "pre",
+            collapsedLines: 8,
+          });
+          continue;
+        }
+
+        const isAgentMessage = itemType === "agent_message" || itemType === "AgentMessage";
+        if (isAgentMessage && next?.event_type === "agent_message") {
+          continue;
+        }
+
+        out.push({
+          key: `e-${e.id}`,
+          role: "assistant",
+          text: maybeItemText.text,
+          format: "markdown",
+          tone: "normal",
+        });
         continue;
       }
 
       const visible = extractUserVisibleText(e.payload);
       if (visible) {
-        out.push({ key: `e-${e.id}`, role: "event", text: visible });
+        out.push({ key: `e-${e.id}`, role: "event", text: visible, format: "pre" });
       }
       continue;
     }
@@ -200,6 +332,7 @@ export function eventsToChatItems(
       key: `e-${e.id}`,
       role: "event",
       text: visible ? `${e.event_type}: ${visible}` : `${e.event_type}: ${JSON.stringify(e.payload)}`,
+      format: "pre",
     });
   }
 

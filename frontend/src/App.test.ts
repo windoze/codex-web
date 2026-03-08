@@ -39,6 +39,39 @@ describe("ui helpers", () => {
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("assistant");
     expect(items[0].text).toContain("**Finding markdown files**");
+    expect(items[0].tone).toBe("reasoning");
+  });
+
+  it("renders legacy command_execution items as collapsed preformatted text", () => {
+    const events = [
+      e(1, "codex_event", {
+        type: "item.completed",
+        item: { id: "item_0", type: "command_execution", text: "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9" },
+      }),
+    ];
+    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].format).toBe("pre");
+    expect(items[0].collapsedLines).toBe(8);
+  });
+
+  it("renders exec_command_end aggregated_output as collapsed preformatted text", () => {
+    const events = [
+      e(1, "codex_event", {
+        type: "exec_command_end",
+        command: ["rg", "--files"],
+        exit_code: 0,
+        aggregated_output: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj",
+        formatted_output: "",
+        stdout: "",
+        stderr: "",
+      }),
+    ];
+    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].format).toBe("pre");
+    expect(items[0].collapsedLines).toBe(8);
+    expect(items[0].text).toContain("rg --files");
   });
 
   it("shows raw JSON when raw toggle is on", () => {

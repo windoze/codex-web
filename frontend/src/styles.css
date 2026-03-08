@@ -282,13 +282,40 @@ body {
   white-space: normal;
 }
 
-.eventText {
+.preBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.preText {
   margin: 0;
   white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
   font-size: 11px;
   opacity: 0.9;
+}
+
+.linkButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  font-size: 12px;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+  opacity: 1;
+}
+
+.bubbleReasoning {
+  opacity: 0.72;
+  background: rgba(127, 127, 127, 0.06);
 }
 
 .bubbleMarkdown {
