@@ -354,6 +354,10 @@ body {
   white-space: normal;
 }
 
+.bubbleAgentMessage {
+  border-width: 2px;
+}
+
 .preBlock {
   display: grid;
   gap: 6px;

@@ -139,6 +139,14 @@ describe("ui helpers", () => {
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("assistant");
     expect(items[0].text).toBe("hello");
+    expect(items[0].kind).toBe("agent_message");
+  });
+
+  it("tags agent_message events for styling", () => {
+    const events = [e(1, "agent_message", { text: "hello" })];
+    const items = eventsToChatItems(events, { showRawMessages: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("agent_message");
   });
 
   it("renders run_status running/completed as Start/Stop splitters when raw is off", () => {

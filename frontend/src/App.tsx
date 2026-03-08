@@ -29,6 +29,7 @@ export type ChatItem = {
   text: string;
   format: "markdown" | "pre" | "splitter";
   tone?: "normal" | "reasoning";
+  kind?: "agent_message";
   collapsedLines?: number;
 };
 
@@ -192,6 +193,7 @@ function CollapsiblePre({ text, maxLines }: { text: string; maxLines?: number })
 
 function Bubble({ item }: { item: ChatItem }) {
   const toneClass = item.tone === "reasoning" ? "bubbleReasoning" : "";
+  const kindClass = item.kind === "agent_message" ? "bubbleAgentMessage" : "";
 
   if (item.format === "splitter") {
     return (
@@ -205,14 +207,14 @@ function Bubble({ item }: { item: ChatItem }) {
 
   if (item.format === "pre") {
     return (
-      <div className={`bubble bubblePlain ${toneClass}`.trim()}>
+      <div className={`bubble bubblePlain ${toneClass} ${kindClass}`.trim()}>
         <CollapsiblePre text={item.text} maxLines={item.collapsedLines} />
       </div>
     );
   }
 
   return (
-    <div className={`bubble bubbleMarkdown ${toneClass}`.trim()}>
+    <div className={`bubble bubbleMarkdown ${toneClass} ${kindClass}`.trim()}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
     </div>
   );
@@ -230,6 +232,7 @@ function eventToChatItem(e: ConversationEvent): ChatItem {
       text: text ?? JSON.stringify(e.payload),
       format: "markdown",
       tone: "normal",
+      kind: "agent_message",
     };
   }
   return {
@@ -263,8 +266,16 @@ export function eventsToChatItems(
       const finalText = extractText(e.payload) ?? JSON.stringify(e.payload);
       if (activeStreamIndex != null) {
         out[activeStreamIndex].text = finalText;
+        out[activeStreamIndex].kind = "agent_message";
       } else {
-        out.push({ key: `e-${e.id}`, role: "assistant", text: finalText, format: "markdown", tone: "normal" });
+        out.push({
+          key: `e-${e.id}`,
+          role: "assistant",
+          text: finalText,
+          format: "markdown",
+          tone: "normal",
+          kind: "agent_message",
+        });
       }
       activeStreamIndex = null;
       activeStreamItemId = null;
@@ -349,6 +360,7 @@ export function eventsToChatItems(
               text: "",
               format: "markdown",
               tone: "normal",
+              kind: "agent_message",
             });
             activeStreamIndex = out.length - 1;
             activeStreamItemId = id;
@@ -398,6 +410,7 @@ export function eventsToChatItems(
           text: maybeItemText.text,
           format: "markdown",
           tone: "normal",
+          kind: "agent_message",
         });
         continue;
       }
