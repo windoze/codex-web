@@ -9,6 +9,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
 use tokio::sync::broadcast;
+use tokio::sync::Semaphore;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub ws_clients: Arc<AtomicUsize>,
     pub interaction_timeout_ms: i64,
     pub interaction_default_action: String,
+    pub run_semaphore: Arc<Semaphore>,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -32,6 +34,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let db = Db::connect(&config.db_path).await?;
     let (event_tx, _rx) = broadcast::channel(1024);
     let ws_clients = Arc::new(AtomicUsize::new(0));
+    let run_semaphore = Arc::new(Semaphore::new(config.max_concurrent_runs.max(1)));
     let app = build_router(
         AppState {
             db,
@@ -44,6 +47,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             ws_clients,
             interaction_timeout_ms: config.interaction_timeout_ms,
             interaction_default_action: config.interaction_default_action.clone(),
+            run_semaphore,
         },
         config.static_dir.as_deref(),
     );
@@ -155,6 +159,7 @@ mod tests {
                 ws_clients: Arc::new(AtomicUsize::new(0)),
                 interaction_timeout_ms: 30_000,
                 interaction_default_action: "decline".to_string(),
+                run_semaphore: Arc::new(Semaphore::new(1)),
             },
             None,
         );

@@ -11,6 +11,7 @@ import {
   listPendingInteractions,
   postUserMessage,
   respondInteraction,
+  updateConversation,
   wsBase,
 } from "./lib/api";
 
@@ -51,6 +52,10 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
 
   const items = useMemo(() => events.map(eventToChatItem), [events]);
+  const activeConversation = useMemo(
+    () => conversations.find((c) => c.id === activeConversationId) ?? null,
+    [conversations, activeConversationId],
+  );
   const runStatus = useMemo(() => {
     let status: string | null = null;
     for (const e of events) {
@@ -60,7 +65,8 @@ export default function App() {
     }
     return status;
   }, [events]);
-  const isConversationRunning = runStatus === "running" || runStatus === "waiting_for_interaction";
+  const isConversationRunning =
+    runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -245,6 +251,36 @@ export default function App() {
     }
   }
 
+  async function onRenameConversation() {
+    if (!activeConversation) return;
+    const nextTitle = window.prompt("New conversation title", activeConversation.title);
+    if (!nextTitle) return;
+    const trimmed = nextTitle.trim();
+    if (!trimmed) return;
+    try {
+      await updateConversation(activeConversation.id, { title: trimmed });
+      const list = await listConversations();
+      setConversations(list);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onArchiveConversation() {
+    if (!activeConversation) return;
+    const ok = window.confirm(`Archive "${activeConversation.title}"?`);
+    if (!ok) return;
+    try {
+      await updateConversation(activeConversation.id, { archived: true });
+      const list = await listConversations();
+      setConversations(list);
+      setActiveConversationId(list[0]?.id ?? null);
+      setEvents([]);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -299,6 +335,33 @@ export default function App() {
       </aside>
 
       <main className="chat">
+        <div className="chatHeader">
+          <div className="chatTitle">
+            {activeConversation ? activeConversation.title : "No conversation"}
+            {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
+          </div>
+          <div className="chatActions">
+            {activeConversation ? (
+              <>
+                <button className="button" type="button" onClick={onRenameConversation}>
+                  Rename
+                </button>
+                <button className="button" type="button" onClick={onArchiveConversation}>
+                  Archive
+                </button>
+                <a
+                  className="button"
+                  href={`${apiBase()}/api/conversations/${activeConversation.id}/export?format=md`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Export
+                </a>
+              </>
+            ) : null}
+          </div>
+        </div>
+
         {error ? <div className="error">{error}</div> : null}
 
         {pendingInteractions.length > 0 ? (

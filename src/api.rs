@@ -18,7 +18,11 @@ pub fn router() -> Router<AppState> {
         .route("/conversations", post(create_conversation).get(list_conversations))
         .route(
             "/conversations/:conversation_id",
-            get(get_conversation),
+            get(get_conversation).patch(update_conversation),
+        )
+        .route(
+            "/conversations/:conversation_id/export",
+            get(export_conversation),
         )
         .route(
             "/conversations/:conversation_id/interactions",
@@ -140,6 +144,133 @@ async fn get_conversation(
 }
 
 #[derive(Debug, Deserialize)]
+struct UpdateConversationRequest {
+    title: Option<String>,
+    archived: Option<bool>,
+}
+
+async fn update_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<Uuid>,
+    Json(req): Json<UpdateConversationRequest>,
+) -> Result<Json<Conversation>, ApiError> {
+    let existing = state
+        .db
+        .get_conversation_optional(conversation_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("conversation not found"))?;
+
+    if let Some(title) = req.title.as_deref() {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(ApiError::bad_request("title must not be empty"));
+        }
+        state
+            .db
+            .update_conversation_title(conversation_id, title)
+            .await
+            .map_err(ApiError::internal)?;
+    }
+
+    if let Some(archived) = req.archived {
+        state
+            .db
+            .set_conversation_archived(conversation_id, archived)
+            .await
+            .map_err(ApiError::internal)?;
+    }
+
+    let updated = state
+        .db
+        .get_conversation(conversation_id)
+        .await
+        .map_err(ApiError::internal)?;
+
+    if updated.title != existing.title || updated.archived_at_ms != existing.archived_at_ms {
+        let ev = state
+            .db
+            .append_event(
+                conversation_id,
+                "conversation_updated",
+                &json!({
+                    "title": updated.title,
+                    "archived_at_ms": updated.archived_at_ms,
+                }),
+            )
+            .await
+            .map_err(ApiError::internal)?;
+        let _ = state.event_tx.send(ev);
+    }
+
+    Ok(Json(updated))
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportQuery {
+    format: Option<String>,
+}
+
+async fn export_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<Uuid>,
+    Query(q): Query<ExportQuery>,
+) -> Result<Response, ApiError> {
+    let conversation = state
+        .db
+        .get_conversation_optional(conversation_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("conversation not found"))?;
+
+    let events = state
+        .db
+        .list_events_after(conversation_id, 0, 100_000)
+        .await
+        .map_err(ApiError::internal)?;
+
+    let format = q.format.as_deref().unwrap_or("json");
+    match format {
+        "json" => Ok(Json(json!({ "conversation": conversation, "events": events })).into_response()),
+        "md" | "markdown" => {
+            let mut out = String::new();
+            out.push_str("# ");
+            out.push_str(&conversation.title);
+            out.push('\n');
+            out.push('\n');
+
+            for e in events {
+                match e.event_type.as_str() {
+                    "user_message" => {
+                        if let Some(text) = e.payload.get("text").and_then(|v| v.as_str()) {
+                            out.push_str("## User\n\n");
+                            out.push_str(text);
+                            out.push_str("\n\n");
+                        }
+                    }
+                    "agent_message" => {
+                        if let Some(text) = e.payload.get("text").and_then(|v| v.as_str()) {
+                            out.push_str("## Assistant\n\n");
+                            out.push_str(text);
+                            out.push_str("\n\n");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            Ok((
+                StatusCode::OK,
+                [("content-type", "text/markdown; charset=utf-8")],
+                out,
+            )
+                .into_response())
+        }
+        _ => Err(ApiError::bad_request("unknown export format (use json or md)")),
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct ListEventsQuery {
     after: Option<i64>,
     limit: Option<i64>,
@@ -249,6 +380,7 @@ async fn post_user_message(
         ws_clients: state.ws_clients.clone(),
         interaction_timeout_ms: state.interaction_timeout_ms,
         interaction_default_action: state.interaction_default_action.clone(),
+        run_semaphore: state.run_semaphore.clone(),
     };
 
     tokio::spawn(async move {

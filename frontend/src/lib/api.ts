@@ -86,6 +86,16 @@ export function createConversation(projectId: Uuid | null, title?: string): Prom
   });
 }
 
+export function updateConversation(
+  conversationId: Uuid,
+  patch: { title?: string; archived?: boolean },
+): Promise<Conversation> {
+  return jsonFetch<Conversation>(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export function listEvents(conversationId: Uuid, after = 0): Promise<ConversationEvent[]> {
   const params = new URLSearchParams({ after: String(after), limit: "5000" });
   return jsonFetch<ConversationEvent[]>(

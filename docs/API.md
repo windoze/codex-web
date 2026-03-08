@@ -23,6 +23,11 @@ Base URL (default): `http://127.0.0.1:8787`
   - Response: `Conversation[]`
 - `GET /api/conversations/:conversation_id`
   - Response: `{ "conversation": Conversation, "run": Run }`
+- `PATCH /api/conversations/:conversation_id`
+  - Body: `{ "title": "Optional", "archived": true|false }`
+  - Response: `Conversation`
+- `GET /api/conversations/:conversation_id/export?format=json|md`
+  - Exports a transcript; Markdown export includes only `user_message` / `agent_message`
 
 ## Events
 

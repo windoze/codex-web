@@ -298,4 +298,4 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Milestone 1 — Basic chat + persistence
 - [x] Milestone 2 — Run orchestration
 - [x] Milestone 3 — Interaction requests + defaults
-- [ ] Milestone 4 — Multi-conversation polish
+- [x] Milestone 4 — Multi-conversation polish

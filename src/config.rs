@@ -50,6 +50,10 @@ pub struct ServeArgs {
     /// Codex CLI sandbox policy (passed to `codex --sandbox`)
     #[arg(long, env = "CODEX_WEB_CODEX_SANDBOX", default_value = "workspace-write")]
     pub codex_sandbox: String,
+
+    /// Maximum number of Codex turns to run concurrently across all conversations
+    #[arg(long, env = "CODEX_WEB_MAX_CONCURRENT_RUNS", default_value_t = 2)]
+    pub max_concurrent_runs: usize,
 }
 
 #[derive(Debug, Args)]
@@ -94,6 +98,7 @@ pub struct Config {
     pub interaction_default_action: String,
     pub codex_ask_for_approval: String,
     pub codex_sandbox: String,
+    pub max_concurrent_runs: usize,
 }
 
 impl Config {
@@ -111,6 +116,7 @@ impl Config {
             interaction_default_action: args.interaction_default_action,
             codex_ask_for_approval: args.codex_ask_for_approval,
             codex_sandbox: args.codex_sandbox,
+            max_concurrent_runs: args.max_concurrent_runs,
         })
     }
 

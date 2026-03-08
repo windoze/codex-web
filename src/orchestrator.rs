@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::sync::broadcast;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::codex::{CodexInvocation, CodexRuntime};
@@ -22,6 +23,7 @@ pub struct TurnContext {
     pub ws_clients: Arc<AtomicUsize>,
     pub interaction_timeout_ms: i64,
     pub interaction_default_action: String,
+    pub run_semaphore: Arc<Semaphore>,
 }
 
 pub async fn run_turn(ctx: TurnContext) {
@@ -57,7 +59,30 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         ws_clients,
         interaction_timeout_ms,
         interaction_default_action,
+        run_semaphore,
     } = ctx;
+
+    // Global concurrency limit across conversations.
+    let permit = match run_semaphore.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            db.set_run_status(conversation_id, crate::db::RunStatus::Queued)
+                .await?;
+            emit(
+                &db,
+                &event_tx,
+                conversation_id,
+                "run_status",
+                &serde_json::json!({ "status": "queued" }),
+            )
+            .await?;
+            run_semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| anyhow::anyhow!("run semaphore closed"))?
+        }
+    };
 
     let outcome = crate::codex::run_jsonl_events_with_input(
         codex,
@@ -109,6 +134,8 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         },
     )
     .await?;
+
+    drop(permit);
 
     db.mark_run_completed(
         conversation_id,
@@ -328,6 +355,7 @@ mod tests {
             ws_clients: Arc::new(AtomicUsize::new(0)),
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
+            run_semaphore: Arc::new(Semaphore::new(1)),
         })
         .await;
 
@@ -382,6 +410,7 @@ mod tests {
             ws_clients: Arc::new(AtomicUsize::new(0)),
             interaction_timeout_ms: 1_000,
             interaction_default_action: "decline".to_string(),
+            run_semaphore: Arc::new(Semaphore::new(1)),
         })
         .await;
 

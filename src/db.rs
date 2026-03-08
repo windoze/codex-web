@@ -46,10 +46,46 @@ impl Db {
 
     pub async fn create_project(&self, name: &str, root_path: &Path) -> anyhow::Result<Project> {
         let now = now_ms();
+        let root_path_str = root_path.to_string_lossy().to_string();
+
+        if let Some(existing) = sqlx::query_as::<_, ProjectRow>(
+            r#"
+            SELECT id, name, root_path, created_at_ms, updated_at_ms
+            FROM projects
+            WHERE root_path = ?1
+            "#,
+        )
+        .bind(&root_path_str)
+        .fetch_optional(&self.pool)
+        .await
+        .context("lookup project by root_path")?
+        {
+            let existing_project = Project::from(existing);
+            sqlx::query(
+                r#"
+                UPDATE projects
+                SET name = ?2, updated_at_ms = ?3
+                WHERE id = ?1
+                "#,
+            )
+            .bind(existing_project.id.to_string())
+            .bind(name)
+            .bind(now)
+            .execute(&self.pool)
+            .await
+            .context("update existing project metadata")?;
+
+            return Ok(Project {
+                updated_at_ms: now,
+                name: name.to_owned(),
+                ..existing_project
+            });
+        }
+
         let project = Project {
             id: Uuid::new_v4(),
             name: name.to_owned(),
-            root_path: root_path.to_string_lossy().to_string(),
+            root_path: root_path_str,
             created_at_ms: now,
             updated_at_ms: now,
         };
@@ -199,6 +235,51 @@ impl Db {
         .await
         .context("get conversation (optional)")?;
         Ok(row.map(Conversation::from))
+    }
+
+    pub async fn update_conversation_title(
+        &self,
+        conversation_id: Uuid,
+        title: &str,
+    ) -> anyhow::Result<()> {
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            UPDATE conversations
+            SET title = ?2, updated_at_ms = ?3
+            WHERE id = ?1
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .bind(title)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .context("update conversation title")?;
+        Ok(())
+    }
+
+    pub async fn set_conversation_archived(
+        &self,
+        conversation_id: Uuid,
+        archived: bool,
+    ) -> anyhow::Result<()> {
+        let now = now_ms();
+        let archived_at_ms = if archived { Some(now) } else { None };
+        sqlx::query(
+            r#"
+            UPDATE conversations
+            SET archived_at_ms = ?2, updated_at_ms = ?3
+            WHERE id = ?1
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .bind(archived_at_ms)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .context("archive conversation")?;
+        Ok(())
     }
 
     pub async fn append_event(
@@ -554,6 +635,7 @@ pub struct ConversationEvent {
 #[serde(rename_all = "snake_case")]
 pub enum RunStatus {
     Idle,
+    Queued,
     Running,
     Completed,
     Failed,
@@ -565,6 +647,7 @@ impl RunStatus {
     fn as_str(&self) -> &'static str {
         match self {
             RunStatus::Idle => "idle",
+            RunStatus::Queued => "queued",
             RunStatus::Running => "running",
             RunStatus::Completed => "completed",
             RunStatus::Failed => "failed",
@@ -580,6 +663,7 @@ impl std::str::FromStr for RunStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "idle" => Ok(RunStatus::Idle),
+            "queued" => Ok(RunStatus::Queued),
             "running" => Ok(RunStatus::Running),
             "completed" => Ok(RunStatus::Completed),
             "failed" => Ok(RunStatus::Failed),
@@ -882,6 +966,19 @@ mod tests {
         let pending = db.list_pending_interactions(conversation.id).await?;
         assert_eq!(pending.len(), 0);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn create_project_reuses_same_root_path() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir().context("create temp dir")?;
+        let db_path = temp_dir.path().join("codex-web-test-project-dedup.sqlite3");
+        let db = Db::connect(&db_path).await?;
+
+        let p1 = db.create_project("P1", temp_dir.path()).await?;
+        let p2 = db.create_project("P2", temp_dir.path()).await?;
+        assert_eq!(p1.id, p2.id);
+        assert_eq!(p2.name, "P2");
         Ok(())
     }
 }

@@ -24,6 +24,7 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
+            run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         },
         None,
     );

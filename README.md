@@ -72,6 +72,7 @@ The daemon can be configured via CLI flags or environment variables:
 - `CODEX_WEB_INTERACTION_DEFAULT_ACTION` (default `decline`)
 - `CODEX_WEB_CODEX_APPROVAL_POLICY` (default `never`)
 - `CODEX_WEB_CODEX_SANDBOX` (default `workspace-write`)
+- `CODEX_WEB_MAX_CONCURRENT_RUNS` (default `2`)
 - `RUST_LOG` (default `codex_web=info,tower_http=info`)
 
 ## Data storage
