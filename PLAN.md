@@ -310,3 +310,4 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 
 ## 14) Step-by-step Task Log (incremental)
 - [x] Sidebar + new conversation dialog: home-rooted directory picker; list shows title fallback and updated time
+- [x] Fix composer spinner placement so it renders inside the input field

@@ -771,18 +771,14 @@ export default function App() {
         </div>
 
         <form className="composer" onSubmit={onSendMessage}>
-          <div className="composerInputWrap">
+          <div className="composerField">
             {isConversationRunning ? (
-              <span
-                className="spinner spinnerLarge composerSpinner"
-                aria-label="Turn in progress"
-                title="Turn in progress"
-              />
+              <span className="spinner spinnerLarge composerSpinner" aria-label="Turn in progress" title="Turn in progress" />
             ) : null}
             <input
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
-              className={isConversationRunning ? "input composerInput hasSpinner" : "input composerInput"}
+              className="composerInput"
               placeholder={activeConversationId ? "Send a message…" : "Create/select a conversation first"}
               disabled={!activeConversationId || isSending || isConversationRunning}
             />
