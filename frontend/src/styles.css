@@ -316,6 +316,29 @@ body {
   opacity: 0.75;
 }
 
+.splitter {
+  width: min(820px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.splitterLine {
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(127, 127, 127, 0.25);
+}
+
+.splitterText {
+  flex: 0 0 auto;
+  font-size: 12px;
+  opacity: 0.85;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+}
+
 .bubble {
   max-width: min(820px, 100%);
   padding: 10px 12px;

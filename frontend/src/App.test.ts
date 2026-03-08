@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { Conversation, ConversationEvent, Project } from "./lib/api";
-import { conversationTitleForList, deriveRunStatusFromEvents, eventsToChatItems, isTurnInProgress, pathBasename } from "./App";
+import {
+  conversationTitleForList,
+  deriveRunStatusFromEvents,
+  eventsToChatItems,
+  isTurnInProgress,
+  pathBasename,
+} from "./App";
 
-function e(id: number, event_type: string, payload: unknown): ConversationEvent {
+function e(id: number, event_type: string, payload: unknown, ts_ms = 0): ConversationEvent {
   return {
     id,
     conversation_id: "00000000-0000-0000-0000-000000000000",
-    ts_ms: 0,
+    ts_ms,
     event_type,
     payload,
   };
@@ -65,7 +71,7 @@ describe("ui helpers", () => {
         item: { type: "AgentMessage", id: "item_0", content: [{ type: "Text", text: "hello" }] },
       }),
     ];
-    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    const items = eventsToChatItems(events, { showRawMessages: false });
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("assistant");
     expect(items[0].text).toBe("hello");
@@ -78,7 +84,7 @@ describe("ui helpers", () => {
         item: { id: "item_0", type: "reasoning", text: "**Finding markdown files**\n\nhello" },
       }),
     ];
-    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    const items = eventsToChatItems(events, { showRawMessages: false });
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("assistant");
     expect(items[0].text).toContain("**Finding markdown files**");
@@ -92,7 +98,7 @@ describe("ui helpers", () => {
         item: { id: "item_0", type: "command_execution", text: "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9" },
       }),
     ];
-    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    const items = eventsToChatItems(events, { showRawMessages: false });
     expect(items).toHaveLength(1);
     expect(items[0].format).toBe("pre");
     expect(items[0].collapsedLines).toBe(8);
@@ -110,7 +116,7 @@ describe("ui helpers", () => {
         stderr: "",
       }),
     ];
-    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    const items = eventsToChatItems(events, { showRawMessages: false });
     expect(items).toHaveLength(1);
     expect(items[0].format).toBe("pre");
     expect(items[0].collapsedLines).toBe(8);
@@ -119,7 +125,7 @@ describe("ui helpers", () => {
 
   it("shows raw JSON when raw toggle is on", () => {
     const events = [e(1, "codex_event", { type: "error", message: "boom" })];
-    const items = eventsToChatItems(events, { showRawCodexEvents: true });
+    const items = eventsToChatItems(events, { showRawMessages: true });
     expect(items[0].text).toContain("codex_event:");
     expect(items[0].text).toContain("boom");
   });
@@ -129,10 +135,32 @@ describe("ui helpers", () => {
       e(1, "codex_event", { type: "agent_message_content_delta", item_id: "item_1", delta: "hel" }),
       e(2, "codex_event", { type: "agent_message_content_delta", item_id: "item_1", delta: "lo" }),
     ];
-    const items = eventsToChatItems(events, { showRawCodexEvents: false });
+    const items = eventsToChatItems(events, { showRawMessages: false });
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("assistant");
     expect(items[0].text).toBe("hello");
+  });
+
+  it("renders run_status running/completed as Start/Stop splitters when raw is off", () => {
+    const events = [
+      e(1, "run_status", { status: "running" }, 0),
+      e(2, "agent_message", { text: "hello" }, 1_000),
+      e(3, "run_status", { status: "completed" }, 2_000),
+    ];
+    const items = eventsToChatItems(events, { showRawMessages: false });
+    expect(items[0].format).toBe("splitter");
+    expect(items[0].text).toContain("Start:");
+    expect(items.at(-1)?.format).toBe("splitter");
+    expect(items.at(-1)?.text).toContain("Stop:");
+  });
+
+  it("renders run_status as raw pre text when raw is on", () => {
+    const events = [e(1, "run_status", { status: "running" }, 0)];
+    const items = eventsToChatItems(events, { showRawMessages: true });
+    expect(items).toHaveLength(1);
+    expect(items[0].format).toBe("pre");
+    expect(items[0].text).toContain("run_status:");
+    expect(items[0].text).toContain("running");
   });
 
   it("derives the latest run_status from the event stream", () => {

@@ -312,3 +312,4 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Sidebar + new conversation dialog: home-rooted directory picker; list shows title fallback and updated time
 - [x] Fix composer spinner placement so it renders inside the input field
 - [x] Show per-conversation run spinner in left-pane conversation list
+- [x] Render run_status as Start/Stop splitters; hide raw run_status unless raw enabled

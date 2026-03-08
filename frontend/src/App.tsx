@@ -27,7 +27,7 @@ export type ChatItem = {
   key: string;
   role: "user" | "assistant" | "event";
   text: string;
-  format: "markdown" | "pre";
+  format: "markdown" | "pre" | "splitter";
   tone?: "normal" | "reasoning";
   collapsedLines?: number;
 };
@@ -44,6 +44,11 @@ export function deriveRunStatusFromEvents(events: ConversationEvent[]): string |
 
 export function isTurnInProgress(runStatus: string | null): boolean {
   return runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
+}
+
+function formatIsoTimestamp(ms: number): string {
+  // Deterministic, timezone-independent display (UTC).
+  return new Date(ms).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
 }
 
 export function pathBasename(path: string): string {
@@ -188,6 +193,16 @@ function CollapsiblePre({ text, maxLines }: { text: string; maxLines?: number })
 function Bubble({ item }: { item: ChatItem }) {
   const toneClass = item.tone === "reasoning" ? "bubbleReasoning" : "";
 
+  if (item.format === "splitter") {
+    return (
+      <div className="splitter">
+        <div className="splitterLine" />
+        <div className="splitterText">{item.text}</div>
+        <div className="splitterLine" />
+      </div>
+    );
+  }
+
   if (item.format === "pre") {
     return (
       <div className={`bubble bubblePlain ${toneClass}`.trim()}>
@@ -227,7 +242,7 @@ function eventToChatItem(e: ConversationEvent): ChatItem {
 
 export function eventsToChatItems(
   events: ConversationEvent[],
-  opts: { showRawCodexEvents: boolean },
+  opts: { showRawMessages: boolean },
 ): ChatItem[] {
   const out: ChatItem[] = [];
   let activeStreamIndex: number | null = null;
@@ -256,8 +271,47 @@ export function eventsToChatItems(
       continue;
     }
 
+    if (e.event_type === "run_status") {
+      const status = (e.payload as { status?: unknown } | null)?.status;
+      const statusStr = typeof status === "string" ? status : null;
+
+      if (opts.showRawMessages) {
+        out.push({
+          key: `e-${e.id}`,
+          role: "event",
+          text: `run_status: ${JSON.stringify(e.payload)}`,
+          format: "pre",
+        });
+        continue;
+      }
+
+      if (statusStr === "running") {
+        out.push({
+          key: `e-${e.id}`,
+          role: "event",
+          text: `Start: ${formatIsoTimestamp(e.ts_ms)}`,
+          format: "splitter",
+        });
+      } else if (statusStr === "completed") {
+        out.push({
+          key: `e-${e.id}`,
+          role: "event",
+          text: `Stop: ${formatIsoTimestamp(e.ts_ms)}`,
+          format: "splitter",
+        });
+      } else if (statusStr === "failed" || statusStr === "aborted") {
+        out.push({
+          key: `e-${e.id}`,
+          role: "event",
+          text: `Stop (${statusStr}): ${formatIsoTimestamp(e.ts_ms)}`,
+          format: "splitter",
+        });
+      }
+      continue;
+    }
+
     if (e.event_type === "codex_event") {
-      if (opts.showRawCodexEvents) {
+      if (opts.showRawMessages) {
         out.push({
           key: `e-${e.id}`,
           role: "event",
@@ -375,7 +429,7 @@ export default function App() {
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingInteractions, setPendingInteractions] = useState<InteractionRequest[]>([]);
-  const [showRawCodexEvents, setShowRawCodexEvents] = useState(false);
+  const [showRawMessages, setShowRawMessages] = useState(false);
 
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -393,7 +447,7 @@ export default function App() {
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  const items = useMemo(() => eventsToChatItems(events, { showRawCodexEvents }), [events, showRawCodexEvents]);
+  const items = useMemo(() => eventsToChatItems(events, { showRawMessages }), [events, showRawMessages]);
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
     [conversations, activeConversationId],
@@ -742,10 +796,10 @@ export default function App() {
             <label className="toggle">
               <input
                 type="checkbox"
-                checked={showRawCodexEvents}
-                onChange={(e) => setShowRawCodexEvents(e.target.checked)}
+                checked={showRawMessages}
+                onChange={(e) => setShowRawMessages(e.target.checked)}
               />
-              <span>Show raw</span>
+              <span>Show raw messages</span>
             </label>
             {activeConversation ? (
               <>
