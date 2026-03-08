@@ -47,6 +47,30 @@ export function isTurnInProgress(runStatus: string | null): boolean {
   return runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
 }
 
+export type TokenUsage = {
+  cached_input_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+};
+
+export function deriveTokenUsageFromEvents(events: ConversationEvent[]): TokenUsage | null {
+  let usage: TokenUsage | null = null;
+  for (const e of events) {
+    if (e.event_type !== "codex_event") continue;
+    const payload = e.payload as Record<string, unknown> | null;
+    const typ = payload?.type;
+    if (typ !== "turn.completed" && typ !== "turn_completed") continue;
+    const u = payload?.usage as Record<string, unknown> | null;
+    if (!u || typeof u !== "object") continue;
+    const cached = u.cached_input_tokens;
+    const input = u.input_tokens;
+    const output = u.output_tokens;
+    if (typeof cached !== "number" || typeof input !== "number" || typeof output !== "number") continue;
+    usage = { cached_input_tokens: cached, input_tokens: input, output_tokens: output };
+  }
+  return usage;
+}
+
 function formatIsoTimestamp(ms: number): string {
   // Deterministic, timezone-independent display (UTC).
   return new Date(ms).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
@@ -467,6 +491,7 @@ export default function App() {
   );
   const runStatus = useMemo(() => deriveRunStatusFromEvents(events), [events]);
   const isConversationRunning = isTurnInProgress(runStatus);
+  const tokenUsage = useMemo(() => deriveTokenUsageFromEvents(events), [events]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -803,6 +828,12 @@ export default function App() {
             {activeConversation
               ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
               : "No conversation"}
+            {tokenUsage ? (
+              <span className="tokenUsage">
+                ({tokenUsage.cached_input_tokens} cached tokens, {tokenUsage.input_tokens} input tokens,{" "}
+                {tokenUsage.output_tokens} output tokens)
+              </span>
+            ) : null}
             {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
           </div>
           <div className="chatActions">

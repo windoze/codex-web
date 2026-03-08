@@ -314,3 +314,4 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Show per-conversation run spinner in left-pane conversation list
 - [x] Render run_status as Start/Stop splitters; hide raw run_status unless raw enabled
 - [x] Style agent_message bubbles with thicker border
+- [x] Show token usage in chat header from turn.completed usage

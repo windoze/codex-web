@@ -3,6 +3,7 @@ import type { Conversation, ConversationEvent, Project } from "./lib/api";
 import {
   conversationTitleForList,
   deriveRunStatusFromEvents,
+  deriveTokenUsageFromEvents,
   eventsToChatItems,
   isTurnInProgress,
   pathBasename,
@@ -178,6 +179,20 @@ describe("ui helpers", () => {
       e(3, "run_status", { status: "completed" }),
     ];
     expect(deriveRunStatusFromEvents(events)).toBe("completed");
+  });
+
+  it("derives token usage from turn.completed events", () => {
+    const events = [
+      e(1, "codex_event", {
+        type: "turn.completed",
+        usage: { cached_input_tokens: 120, input_tokens: 30, output_tokens: 50 },
+      }),
+    ];
+    expect(deriveTokenUsageFromEvents(events)).toEqual({
+      cached_input_tokens: 120,
+      input_tokens: 30,
+      output_tokens: 50,
+    });
   });
 
   it("treats queued/running/waiting_for_interaction as in-progress", () => {
