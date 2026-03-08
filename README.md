@@ -29,6 +29,24 @@ Health check:
 curl -s http://127.0.0.1:8787/healthz
 ```
 
+## Run the web UI (development)
+
+In a second terminal:
+
+```sh
+cd frontend
+npm install
+npm run dev
+```
+
+By default the UI expects the daemon at `http://127.0.0.1:8787`.
+
+If you run the daemon on a different address, set:
+
+```sh
+VITE_API_BASE=http://127.0.0.1:8787 npm run dev
+```
+
 ## Configuration
 
 The daemon can be configured via CLI flags or environment variables:
@@ -45,4 +63,3 @@ By default the SQLite DB lives at:
 `~/.codex-web/codex-web.sqlite`
 
 The schema is created via SQLx migrations in `migrations/`.
-

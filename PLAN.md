@@ -286,16 +286,16 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
   - responding to interaction requests
 
 ## 12) Deliverables Checklist
-- [ ] Local daemon with SQLite persistence
-- [ ] REST + WS APIs
-- [ ] Web UI with multi-conversation chat
+- [x] Local daemon with SQLite persistence
+- [x] REST + WS APIs
+- [x] Web UI with multi-conversation chat
 - [ ] Run orchestration for project-based conversations
 - [ ] Interaction request routing + default responses
 - [ ] Documented config knobs (ports, DB path, policies, limits)
 
 ## 13) Progress
 - [x] Milestone 0 — Foundations
-- [ ] Milestone 1 — Basic chat + persistence
+- [x] Milestone 1 — Basic chat + persistence
 - [ ] Milestone 2 — Run orchestration
 - [ ] Milestone 3 — Interaction requests + defaults
 - [ ] Milestone 4 — Multi-conversation polish
