@@ -21,6 +21,32 @@ type ChatItem = {
   text: string;
 };
 
+export function isRawCodexEvent(e: ConversationEvent): boolean {
+  return e.event_type === "codex_event";
+}
+
+export function filterEventsForDisplay(
+  events: ConversationEvent[],
+  opts: { showRawCodexEvents: boolean },
+): ConversationEvent[] {
+  if (opts.showRawCodexEvents) return events;
+  return events.filter((e) => !isRawCodexEvent(e));
+}
+
+export function deriveRunStatusFromEvents(events: ConversationEvent[]): string | null {
+  let status: string | null = null;
+  for (const e of events) {
+    if (e.event_type !== "run_status") continue;
+    const raw = (e.payload as { status?: unknown } | null)?.status;
+    if (typeof raw === "string") status = raw;
+  }
+  return status;
+}
+
+export function isTurnInProgress(runStatus: string | null): boolean {
+  return runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
+}
+
 function extractText(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const maybeText = (payload as { text?: unknown }).text;
@@ -44,6 +70,7 @@ export default function App() {
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingInteractions, setPendingInteractions] = useState<InteractionRequest[]>([]);
+  const [showRawCodexEvents, setShowRawCodexEvents] = useState(false);
 
   const [newProjectPath, setNewProjectPath] = useState("");
   const [newConversationTitle, setNewConversationTitle] = useState("");
@@ -51,22 +78,17 @@ export default function App() {
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  const items = useMemo(() => events.map(eventToChatItem), [events]);
+  const displayEvents = useMemo(
+    () => filterEventsForDisplay(events, { showRawCodexEvents }),
+    [events, showRawCodexEvents],
+  );
+  const items = useMemo(() => displayEvents.map(eventToChatItem), [displayEvents]);
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
     [conversations, activeConversationId],
   );
-  const runStatus = useMemo(() => {
-    let status: string | null = null;
-    for (const e of events) {
-      if (e.event_type !== "run_status") continue;
-      const raw = (e.payload as { status?: unknown } | null)?.status;
-      if (typeof raw === "string") status = raw;
-    }
-    return status;
-  }, [events]);
-  const isConversationRunning =
-    runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
+  const runStatus = useMemo(() => deriveRunStatusFromEvents(events), [events]);
+  const isConversationRunning = isTurnInProgress(runStatus);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -338,9 +360,18 @@ export default function App() {
         <div className="chatHeader">
           <div className="chatTitle">
             {activeConversation ? activeConversation.title : "No conversation"}
+            {isConversationRunning ? <span className="spinner" title="Turn in progress" /> : null}
             {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
           </div>
           <div className="chatActions">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={showRawCodexEvents}
+                onChange={(e) => setShowRawCodexEvents(e.target.checked)}
+              />
+              <span>Show raw</span>
+            </label>
             {activeConversation ? (
               <>
                 <button className="button" type="button" onClick={onRenameConversation}>
