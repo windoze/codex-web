@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Conversation, ConversationEvent, ConversationListItem, Project } from "./lib/api";
 import {
+  bubblePreviewText,
+  bubbleStartsExpanded,
   conversationTitleForList,
   deriveRunStatusFromEvents,
   deriveTokenUsageFromEvents,
@@ -202,6 +204,18 @@ describe("ui helpers", () => {
     expect(isTurnInProgress("queued")).toBe(true);
     expect(isTurnInProgress("running")).toBe(true);
     expect(isTurnInProgress("waiting_for_interaction")).toBe(true);
+  });
+
+  it("collapses message preview to the first line", () => {
+    expect(bubblePreviewText("hello")).toBe("hello");
+    expect(bubblePreviewText("hello\nworld")).toBe("hello …");
+    expect(bubblePreviewText("hello\r\nworld")).toBe("hello …");
+    expect(bubblePreviewText("\nworld")).toBe("…");
+  });
+
+  it("expands agent_message bubbles by default and collapses others", () => {
+    expect(bubbleStartsExpanded({ kind: "agent_message" })).toBe(true);
+    expect(bubbleStartsExpanded({ kind: undefined })).toBe(false);
   });
 
   it("updates list run_status so spinners can show even when not selected", () => {

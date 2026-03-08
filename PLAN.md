@@ -313,6 +313,7 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Fix composer spinner placement so it renders inside the input field
 - [x] Show per-conversation run spinner in left-pane conversation list
 - [x] Keep conversation list spinners visible for running conversations even when not selected
+- [x] Make message bubbles collapsible; non-agent messages collapsed by default
 - [x] Render run_status as Start/Stop splitters; hide raw run_status unless raw enabled
 - [x] Style agent_message bubbles with thicker border
 - [x] Show token usage in chat header from turn.completed usage

@@ -36,6 +36,19 @@ export type ChatItem = {
   collapsedLines?: number;
 };
 
+export function bubblePreviewText(text: string): string {
+  const idx = text.search(/\r?\n/);
+  const firstLine = (idx === -1 ? text : text.slice(0, idx)).trimEnd();
+  const hasMore = idx !== -1;
+  if (!hasMore) return firstLine;
+  if (!firstLine) return "…";
+  return `${firstLine} …`;
+}
+
+export function bubbleStartsExpanded(item: Pick<ChatItem, "kind">): boolean {
+  return item.kind === "agent_message";
+}
+
 export function deriveRunStatusFromEvents(events: ConversationEvent[]): string | null {
   let status: string | null = null;
   for (const e of events) {
@@ -251,6 +264,7 @@ function CollapsiblePre({ text, maxLines }: { text: string; maxLines?: number })
 function Bubble({ item }: { item: ChatItem }) {
   const toneClass = item.tone === "reasoning" ? "bubbleReasoning" : "";
   const kindClass = item.kind === "agent_message" ? "bubbleAgentMessage" : "";
+  const [expanded, setExpanded] = useState(() => bubbleStartsExpanded(item));
 
   if (item.format === "splitter") {
     return (
@@ -262,17 +276,51 @@ function Bubble({ item }: { item: ChatItem }) {
     );
   }
 
+  const bubbleClass = `bubble ${item.format === "pre" ? "bubblePlain" : "bubbleMarkdown"} ${toneClass} ${kindClass}`.trim();
+  const toggle = (
+    <button
+      className="bubbleToggle"
+      type="button"
+      onClick={() => setExpanded((v) => !v)}
+      aria-label={expanded ? "Collapse message" : "Expand message"}
+      title={expanded ? "Collapse message" : "Expand message"}
+    >
+      {expanded ? "▾" : "▸"}
+    </button>
+  );
+
+  if (!expanded) {
+    return (
+      <div className={bubbleClass}>
+        <div className="bubbleBody">
+          {toggle}
+          <div className="bubblePreview">{bubblePreviewText(item.text)}</div>
+        </div>
+      </div>
+    );
+  }
+
   if (item.format === "pre") {
     return (
-      <div className={`bubble bubblePlain ${toneClass} ${kindClass}`.trim()}>
-        <CollapsiblePre text={item.text} maxLines={item.collapsedLines} />
+      <div className={bubbleClass}>
+        <div className="bubbleBody">
+          {toggle}
+          <div className="bubbleContent">
+            <CollapsiblePre text={item.text} maxLines={item.collapsedLines} />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`bubble bubbleMarkdown ${toneClass} ${kindClass}`.trim()}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+    <div className={bubbleClass}>
+      <div className="bubbleBody">
+        {toggle}
+        <div className="bubbleContent">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+        </div>
+      </div>
     </div>
   );
 }
