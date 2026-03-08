@@ -71,6 +71,12 @@ List pending interactions (across all conversations):
 cargo run -- interactions list
 ```
 
+If the daemon requires auth, pass the token:
+
+```sh
+cargo run -- interactions list --auth-token YOUR_TOKEN
+```
+
 Respond:
 
 ```sh
@@ -84,6 +90,7 @@ The daemon can be configured via CLI flags or environment variables:
 - `CODEX_WEB_LISTEN` (default `127.0.0.1:8787`)
 - `CODEX_WEB_DB_PATH` (default `~/.codex-web/codex-web.sqlite`)
 - `CODEX_WEB_STATIC_DIR` (optional; serve prebuilt UI assets)
+- `CODEX_WEB_AUTH_TOKEN` (optional; require `Authorization: Bearer <token>` for `/api/*` and `/ws`)
 - `CODEX_WEB_INTERACTION_TIMEOUT_MS` (default `30000`)
 - `CODEX_WEB_INTERACTION_DEFAULT_ACTION` (default `decline`)
 - `CODEX_WEB_CODEX_APPROVAL_POLICY` (default `never`)

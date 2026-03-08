@@ -9,12 +9,15 @@ import {
   Project,
   FsEntry,
   apiBase,
+  clearAuthToken,
   createConversation,
   createProject,
+  getAuthToken,
   listConversations,
   listEvents,
   listProjects,
   listPendingInteractions,
+  setAuthToken,
   fsHome,
   fsList,
   postUserMessage,
@@ -460,6 +463,9 @@ export function eventsToChatItems(
 }
 
 export default function App() {
+  const [authTokenSaved, setAuthTokenSaved] = useState<string>(() => getAuthToken() ?? "");
+  const [authTokenDraft, setAuthTokenDraft] = useState<string>(() => getAuthToken() ?? "");
+
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -538,6 +544,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // When the auth token changes, refresh projects so conversation titles can resolve project basenames.
+    let cancelled = false;
+    listProjects()
+      .then((projectList) => {
+        if (!cancelled) setProjects(projectList);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authTokenSaved]);
+
+  useEffect(() => {
     lastEventIdRef.current = events.at(-1)?.id ?? 0;
   }, [events]);
 
@@ -583,7 +602,10 @@ export default function App() {
         // ignore; WebSocket may still work
       }
 
-      const url = `${wsBase()}/ws?conversation_id=${encodeURIComponent(conversationId)}`;
+      const params = new URLSearchParams({ conversation_id: conversationId });
+      const token = authTokenSaved.trim();
+      if (token) params.set("token", token);
+      const url = `${wsBase()}/ws?${params.toString()}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -624,7 +646,7 @@ export default function App() {
         reconnectTimerRef.current = null;
       }
     };
-  }, [activeConversationId]);
+  }, [activeConversationId, authTokenSaved]);
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -783,12 +805,53 @@ export default function App() {
     }
   }
 
+  function onSaveAuthToken(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = authTokenDraft.trim();
+    if (!trimmed) {
+      clearAuthToken();
+      setAuthTokenSaved("");
+      setAuthTokenDraft("");
+      setError(null);
+      return;
+    }
+    setAuthToken(trimmed);
+    setAuthTokenSaved(trimmed);
+    setError(null);
+  }
+
+  function onClearAuthToken() {
+    clearAuthToken();
+    setAuthTokenSaved("");
+    setAuthTokenDraft("");
+    setError(null);
+  }
+
   return (
     <div className="layout">
       <aside className="sidebar">
         <div className="sidebarHeader">
           <div className="brand">codex-web</div>
           <div className="muted">API: {apiBase()}</div>
+          <form className="authRow" onSubmit={onSaveAuthToken}>
+            <input
+              className="input authInput"
+              type="password"
+              value={authTokenDraft}
+              onChange={(e) => setAuthTokenDraft(e.target.value)}
+              placeholder="Auth token (optional)"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+            />
+            <button className="button buttonSmall" type="submit" title="Apply token">
+              Apply
+            </button>
+            <button className="button buttonSmall" type="button" onClick={onClearAuthToken} title="Clear token">
+              Clear
+            </button>
+          </form>
         </div>
 
         <button className="newConversationRow" type="button" onClick={() => openNewConversationDialog()}>

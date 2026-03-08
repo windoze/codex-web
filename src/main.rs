@@ -20,6 +20,7 @@ fn main() -> anyhow::Result<()> {
 
 async fn run_interactions_cli(args: codex_web::config::InteractionsArgs) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
+    let token = args.auth_token.as_deref().filter(|t| !t.trim().is_empty());
 
     match args.command {
         codex_web::config::InteractionsCommand::List { conversation_id } => {
@@ -27,7 +28,11 @@ async fn run_interactions_cli(args: codex_web::config::InteractionsArgs) -> anyh
                 Some(id) => format!("{}/api/conversations/{}/interactions", args.daemon, id),
                 None => format!("{}/api/interactions/pending", args.daemon),
             };
-            let resp = client.get(url).send().await?;
+            let mut req = client.get(url);
+            if let Some(token) = token {
+                req = req.bearer_auth(token);
+            }
+            let resp = req.send().await?;
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             if !status.is_success() {
@@ -45,11 +50,13 @@ async fn run_interactions_cli(args: codex_web::config::InteractionsArgs) -> anyh
                 "{}/api/interactions/{}/respond",
                 args.daemon, interaction_id
             );
-            let resp = client
+            let mut req = client
                 .post(url)
-                .json(&serde_json::json!({ "action": action, "text": text }))
-                .send()
-                .await?;
+                .json(&serde_json::json!({ "action": action, "text": text }));
+            if let Some(token) = token {
+                req = req.bearer_auth(token);
+            }
+            let resp = req.send().await?;
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             if !status.is_success() {

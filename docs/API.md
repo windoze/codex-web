@@ -2,6 +2,16 @@
 
 Base URL (default): `http://127.0.0.1:8787`
 
+## Authentication (optional)
+
+If the daemon is started with `--auth-token` (or `CODEX_WEB_AUTH_TOKEN`), all `/api/*` requests must include:
+
+`Authorization: Bearer <token>`
+
+The browser WebSocket endpoint (`/ws`) cannot set custom headers, so the UI uses a `token` query param:
+
+`/ws?conversation_id=<uuid>&token=<token>`
+
 ## Health
 
 - `GET /healthz` → `{ "status": "ok" }`

@@ -18,6 +18,7 @@ async fn test_app(db_path: &Path) -> axum::Router {
             event_tx,
             codex: codex_web::codex::CodexRuntime::stub(vec![]),
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            auth_token: None,
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),

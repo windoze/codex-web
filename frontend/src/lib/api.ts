@@ -56,6 +56,7 @@ export type FsListResponse = {
 };
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";
+const AUTH_TOKEN_STORAGE_KEY = "codex_web_auth_token";
 
 export function apiBase(): string {
   const envBase = (import.meta as unknown as { env?: Record<string, unknown> }).env?.VITE_API_BASE;
@@ -69,11 +70,42 @@ export function wsBase(): string {
   return base;
 }
 
+function safeLocalStorage(): Storage | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function getAuthToken(): string | null {
+  const storage = safeLocalStorage();
+  if (!storage) return null;
+  const token = storage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  const trimmed = token?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export function setAuthToken(token: string): void {
+  const storage = safeLocalStorage();
+  if (!storage) return;
+  storage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+}
+
+export function clearAuthToken(): void {
+  const storage = safeLocalStorage();
+  if (!storage) return;
+  storage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const res = await fetch(`${apiBase()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });

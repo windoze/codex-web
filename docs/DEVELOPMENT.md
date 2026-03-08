@@ -8,6 +8,12 @@ Run:
 cargo run -- serve --listen 127.0.0.1:8787
 ```
 
+If you want to require a token for API access:
+
+```sh
+cargo run -- serve --listen 127.0.0.1:8787 --auth-token YOUR_TOKEN
+```
+
 Smoke check:
 
 ```sh

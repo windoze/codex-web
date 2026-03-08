@@ -1,17 +1,19 @@
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-use codex_web::server::{build_router, AppState};
+use codex_web::server::{AppState, build_router};
 
 #[tokio::test]
 async fn interaction_can_be_resolved_via_api() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let db_path = temp_dir.path().join("interaction_flow.sqlite3");
-    let db = codex_web::db::Db::connect(&db_path).await.expect("db connect");
+    let db = codex_web::db::Db::connect(&db_path)
+        .await
+        .expect("db connect");
     let (event_tx, _rx) = tokio::sync::broadcast::channel(128);
 
     // Simulate a "present" user so the orchestrator waits instead of auto-responding.
@@ -45,6 +47,7 @@ async fn interaction_can_be_resolved_via_api() {
             event_tx,
             codex,
             ws_clients,
+            auth_token: None,
             interaction_timeout_ms: 5_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
@@ -101,9 +104,7 @@ async fn interaction_can_be_resolved_via_api() {
     // Trigger the turn.
     let req = Request::builder()
         .method("POST")
-        .uri(format!(
-            "/api/conversations/{conversation_id}/messages"
-        ))
+        .uri(format!("/api/conversations/{conversation_id}/messages"))
         .header("content-type", "application/json")
         .body(Body::from(serde_json::json!({ "text": "hi" }).to_string()))
         .unwrap();
@@ -115,9 +116,7 @@ async fn interaction_can_be_resolved_via_api() {
     for _ in 0..50 {
         let req = Request::builder()
             .method("GET")
-            .uri(format!(
-                "/api/conversations/{conversation_id}/interactions"
-            ))
+            .uri(format!("/api/conversations/{conversation_id}/interactions"))
             .body(Body::empty())
             .unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();
@@ -126,7 +125,11 @@ async fn interaction_can_be_resolved_via_api() {
             .await
             .unwrap();
         let pending: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-        if let Some(id) = pending.get(0).and_then(|v| v.get("id")).and_then(|v| v.as_str()) {
+        if let Some(id) = pending
+            .get(0)
+            .and_then(|v| v.get("id"))
+            .and_then(|v| v.as_str())
+        {
             interaction_id = Some(id.to_string());
             break;
         }
@@ -137,11 +140,11 @@ async fn interaction_can_be_resolved_via_api() {
     // Resolve it.
     let req = Request::builder()
         .method("POST")
-        .uri(format!(
-            "/api/interactions/{interaction_id}/respond"
-        ))
+        .uri(format!("/api/interactions/{interaction_id}/respond"))
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::json!({ "action": "accept" }).to_string()))
+        .body(Body::from(
+            serde_json::json!({ "action": "accept" }).to_string(),
+        ))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -162,11 +165,17 @@ async fn interaction_can_be_resolved_via_api() {
             .await
             .unwrap();
         let events: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-        if events.iter().any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("agent_message")) {
+        if events
+            .iter()
+            .any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("agent_message"))
+        {
             saw_agent = true;
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert!(saw_agent, "expected agent_message after resolving interaction");
+    assert!(
+        saw_agent,
+        "expected agent_message after resolving interaction"
+    );
 }

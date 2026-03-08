@@ -2,17 +2,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
-#[cfg(feature = "bundled-ui")]
 use axum::body::Body;
 #[cfg(feature = "bundled-ui")]
 use axum::extract::OriginalUri;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
-#[cfg(feature = "bundled-ui")]
-use axum::http::{HeaderValue, StatusCode};
-use axum::http::{Method, header};
-#[cfg(feature = "bundled-ui")]
+use axum::http::{HeaderValue, Method, Request, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::IntoResponse;
+use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
@@ -39,6 +37,7 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<crate::db::ConversationEvent>,
     pub codex: crate::codex::CodexRuntime,
     pub ws_clients: Arc<AtomicUsize>,
+    pub auth_token: Option<String>,
     pub interaction_timeout_ms: i64,
     pub interaction_default_action: String,
     pub run_semaphore: Arc<Semaphore>,
@@ -61,6 +60,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 skip_git_repo_check: true,
             }),
             ws_clients,
+            auth_token: config.auth_token.clone(),
             interaction_timeout_ms: config.interaction_timeout_ms,
             interaction_default_action: config.interaction_default_action.clone(),
             run_semaphore,
@@ -78,6 +78,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 }
 
 pub fn build_router(state: AppState, static_dir: Option<&std::path::Path>) -> Router {
+    let auth_token = state.auth_token.clone();
     let cors = CorsLayer::new()
         .allow_methods([
             Method::GET,
@@ -92,10 +93,24 @@ pub fn build_router(state: AppState, static_dir: Option<&std::path::Path>) -> Ro
 
     let mut app = Router::new()
         .route("/healthz", get(healthz))
-        .nest("/api", crate::api::router())
+        .nest(
+            "/api",
+            crate::api::router().layer(middleware::from_fn_with_state(
+                auth_token.clone(),
+                require_bearer,
+            )),
+        )
         .route("/ws", get(ws))
         .with_state(state)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|req: &Request<Body>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %req.method(),
+                    path = %req.uri().path(),
+                )
+            }),
+        )
         .layer(cors);
 
     if let Some(dir) = static_dir {
@@ -115,16 +130,70 @@ async fn healthz(State(_state): State<AppState>) -> Json<serde_json::Value> {
     Json(json!({"status":"ok"}))
 }
 
+async fn require_bearer(
+    State(expected): State<Option<String>>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let Some(expected) = expected.filter(|t| !t.trim().is_empty()) else {
+        return next.run(req).await;
+    };
+
+    if req.method() == Method::OPTIONS {
+        return next.run(req).await;
+    }
+
+    let auth = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let bearer = auth.and_then(|v| v.strip_prefix("Bearer "));
+
+    if bearer == Some(expected.as_str()) {
+        return next.run(req).await;
+    }
+
+    let mut res = (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": "unauthorized" })),
+    )
+        .into_response();
+    res.headers_mut()
+        .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+    res
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct WsQuery {
     conversation_id: uuid::Uuid,
+    token: Option<String>,
 }
 
 async fn ws(
     ws: WebSocketUpgrade,
-    Query(q): Query<WsQuery>,
     State(state): State<AppState>,
+    Query(q): Query<WsQuery>,
+    headers: axum::http::HeaderMap,
 ) -> impl axum::response::IntoResponse {
+    if let Some(expected) = state.auth_token.as_deref().filter(|t| !t.trim().is_empty()) {
+        let auth = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
+        let bearer = auth.and_then(|v| v.strip_prefix("Bearer "));
+        let ok = bearer == Some(expected) || q.token.as_deref() == Some(expected);
+
+        if !ok {
+            let mut res = (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "unauthorized" })),
+            )
+                .into_response();
+            res.headers_mut()
+                .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+            return res;
+        }
+    }
+
     let rx = state.event_tx.subscribe();
     let ws_clients = state.ws_clients.clone();
     ws_clients.fetch_add(1, Ordering::Relaxed);
@@ -229,6 +298,7 @@ mod tests {
                 event_tx,
                 codex: crate::codex::CodexRuntime::stub(vec![]),
                 ws_clients: Arc::new(AtomicUsize::new(0)),
+                auth_token: None,
                 interaction_timeout_ms: 30_000,
                 interaction_default_action: "decline".to_string(),
                 run_semaphore: Arc::new(Semaphore::new(1)),

@@ -2,29 +2,29 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-use codex_web::server::{build_router, AppState};
+use codex_web::server::{AppState, build_router};
 
 #[tokio::test]
 async fn posting_message_runs_codex_stub_and_persists_agent_message() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let db_path = temp_dir.path().join("codex_stub.sqlite3");
-    let db = codex_web::db::Db::connect(&db_path).await.expect("db connect");
+    let db = codex_web::db::Db::connect(&db_path)
+        .await
+        .expect("db connect");
     let (event_tx, _rx) = tokio::sync::broadcast::channel(128);
 
-    let codex = codex_web::codex::CodexRuntime::stub(vec![
-        serde_json::json!({
-            "type": "item_completed",
-            "thread_id": "00000000-0000-0000-0000-000000000001",
-            "turn_id": "turn_0",
-            "item": {
-                "type": "AgentMessage",
-                "id": "item_0",
-                "content": [
-                    { "type": "Text", "text": "hello from stub" }
-                ]
-            }
-        }),
-    ]);
+    let codex = codex_web::codex::CodexRuntime::stub(vec![serde_json::json!({
+        "type": "item_completed",
+        "thread_id": "00000000-0000-0000-0000-000000000001",
+        "turn_id": "turn_0",
+        "item": {
+            "type": "AgentMessage",
+            "id": "item_0",
+            "content": [
+                { "type": "Text", "text": "hello from stub" }
+            ]
+        }
+    })]);
 
     let app = build_router(
         AppState {
@@ -32,6 +32,7 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
             event_tx,
             codex,
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            auth_token: None,
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
@@ -88,9 +89,7 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
     // Post message (triggers background stub turn).
     let req = Request::builder()
         .method("POST")
-        .uri(format!(
-            "/api/conversations/{conversation_id}/messages"
-        ))
+        .uri(format!("/api/conversations/{conversation_id}/messages"))
         .header("content-type", "application/json")
         .body(Body::from(serde_json::json!({ "text": "hi" }).to_string()))
         .unwrap();
@@ -113,7 +112,10 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
             .await
             .unwrap();
         let events: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-        if events.iter().any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("agent_message")) {
+        if events
+            .iter()
+            .any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("agent_message"))
+        {
             saw_agent = true;
             break;
         }
