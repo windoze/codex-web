@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ConversationEvent } from "./lib/api";
-import { deriveRunStatusFromEvents, eventsToChatItems, isTurnInProgress } from "./App";
+import type { Conversation, ConversationEvent, Project } from "./lib/api";
+import { conversationTitleForList, deriveRunStatusFromEvents, eventsToChatItems, isTurnInProgress, pathBasename } from "./App";
 
 function e(id: number, event_type: string, payload: unknown): ConversationEvent {
   return {
@@ -13,6 +13,49 @@ function e(id: number, event_type: string, payload: unknown): ConversationEvent 
 }
 
 describe("ui helpers", () => {
+  it("uses project basename when conversation title is default", () => {
+    const project: Project = {
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "my-project",
+      root_path: "/Users/alice/work/my-project",
+      created_at_ms: 0,
+      updated_at_ms: 0,
+    };
+    const conversation: Conversation = {
+      id: "00000000-0000-0000-0000-000000000002",
+      project_id: project.id,
+      title: "New conversation",
+      archived_at_ms: null,
+      created_at_ms: 0,
+      updated_at_ms: 0,
+    };
+    expect(conversationTitleForList(conversation, project)).toBe("my-project");
+  });
+
+  it("prefers explicit conversation title", () => {
+    const project: Project = {
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "my-project",
+      root_path: "/Users/alice/work/my-project",
+      created_at_ms: 0,
+      updated_at_ms: 0,
+    };
+    const conversation: Conversation = {
+      id: "00000000-0000-0000-0000-000000000002",
+      project_id: project.id,
+      title: "Bugfixes",
+      archived_at_ms: null,
+      created_at_ms: 0,
+      updated_at_ms: 0,
+    };
+    expect(conversationTitleForList(conversation, project)).toBe("Bugfixes");
+  });
+
+  it("extracts a basename for both unix and windows-ish paths", () => {
+    expect(pathBasename("/a/b/c/")).toBe("c");
+    expect(pathBasename("C:\\Users\\alice\\repo")).toBe("repo");
+  });
+
   it("shows user-visible codex fields even when raw is off", () => {
     const events = [
       e(1, "codex_event", {

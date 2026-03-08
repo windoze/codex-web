@@ -5,12 +5,17 @@ import {
   Conversation,
   ConversationEvent,
   InteractionRequest,
+  Project,
+  FsEntry,
   apiBase,
   createConversation,
   createProject,
   listConversations,
   listEvents,
+  listProjects,
   listPendingInteractions,
+  fsHome,
+  fsList,
   postUserMessage,
   respondInteraction,
   updateConversation,
@@ -38,6 +43,29 @@ export function deriveRunStatusFromEvents(events: ConversationEvent[]): string |
 
 export function isTurnInProgress(runStatus: string | null): boolean {
   return runStatus === "queued" || runStatus === "running" || runStatus === "waiting_for_interaction";
+}
+
+export function pathBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const parts = trimmed.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+export function formatUpdatedAt(ms: number): string {
+  const d = new Date(ms);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "2-digit" });
+}
+
+export function conversationTitleForList(c: Conversation, project: Project | null): string {
+  const title = c.title?.trim();
+  if (title && title !== "New conversation") return title;
+  if (project) return pathBasename(project.root_path);
+  return c.title;
 }
 
 function extractText(payload: unknown): string | null {
@@ -341,14 +369,25 @@ export function eventsToChatItems(
 
 export default function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingInteractions, setPendingInteractions] = useState<InteractionRequest[]>([]);
   const [showRawCodexEvents, setShowRawCodexEvents] = useState(false);
 
-  const [newProjectPath, setNewProjectPath] = useState("");
+  const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+
+  const [newConversationOpen, setNewConversationOpen] = useState(false);
   const [newConversationTitle, setNewConversationTitle] = useState("");
+  const [newConversationCreating, setNewConversationCreating] = useState(false);
+
+  const [pickerPath, setPickerPath] = useState<string | null>(null);
+  const [pickerParent, setPickerParent] = useState<string | null>(null);
+  const [pickerEntries, setPickerEntries] = useState<FsEntry[]>([]);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [homePath, setHomePath] = useState<string | null>(null);
 
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -367,9 +406,10 @@ export default function App() {
   const lastEventIdRef = useRef<number>(0);
 
   useEffect(() => {
-    listConversations()
-      .then((list) => {
+    Promise.all([listConversations(), listProjects()])
+      .then(([list, projectList]) => {
         setConversations(list);
+        setProjects(projectList);
         if (list.length > 0) setActiveConversationId((prev) => prev ?? list[0].id);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
@@ -382,6 +422,7 @@ export default function App() {
   useEffect(() => {
     if (!activeConversationId) return;
 
+    const conversationId = activeConversationId;
     setError(null);
     setEvents([]);
 
@@ -413,21 +454,21 @@ export default function App() {
 
       // Catch up first (covers reconnect gaps).
       try {
-        const missed = await listEvents(activeConversationId, lastEventIdRef.current);
+        const missed = await listEvents(conversationId, lastEventIdRef.current);
         if (cancelled) return;
         mergeEvents(missed);
       } catch {
         // ignore; WebSocket may still work
       }
 
-      const url = `${wsBase()}/ws?conversation_id=${encodeURIComponent(activeConversationId)}`;
+      const url = `${wsBase()}/ws?conversation_id=${encodeURIComponent(conversationId)}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onmessage = (msg) => {
         try {
           const e = JSON.parse(msg.data as string) as ConversationEvent;
-          if (e.conversation_id !== activeConversationId) return;
+          if (e.conversation_id !== conversationId) return;
           mergeEvents([e]);
         } catch {
           // ignore
@@ -442,7 +483,7 @@ export default function App() {
       };
     }
 
-    listEvents(activeConversationId, 0)
+    listEvents(conversationId, 0)
       .then((initialEvents) => {
         if (cancelled) return;
         setEvents(initialEvents);
@@ -469,11 +510,12 @@ export default function App() {
       return;
     }
 
+    const conversationId = activeConversationId;
     let cancelled = false;
 
     async function refresh() {
       try {
-        const pending = await listPendingInteractions(activeConversationId);
+        const pending = await listPendingInteractions(conversationId);
         if (!cancelled) setPendingInteractions(pending);
       } catch {
         // ignore
@@ -495,22 +537,67 @@ export default function App() {
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight });
   }, [items.length]);
 
-  async function onCreateConversation(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
+  function conversationProject(c: Conversation): Project | null {
+    if (!c.project_id) return null;
+    return projectsById.get(c.project_id) ?? null;
+  }
+
+  async function loadPickerPath(path: string) {
+    setPickerError(null);
+    setPickerLoading(true);
     try {
-      if (!newProjectPath.trim()) {
-        throw new Error("Project directory is required");
-      }
-      const project = await createProject(newProjectPath.trim());
-      const conversation = await createConversation(project.id, newConversationTitle.trim() || undefined);
-      setNewConversationTitle("");
-      setMessageText("");
-      const list = await listConversations();
-      setConversations(list);
-      setActiveConversationId(conversation.id);
+      const res = await fsList(path);
+      setPickerPath(res.path);
+      setPickerParent(res.parent);
+      setPickerEntries(res.entries);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setPickerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPickerLoading(false);
+    }
+  }
+
+  async function openNewConversationDialog() {
+    setNewConversationOpen(true);
+    setPickerError(null);
+    setNewConversationTitle("");
+    setPickerEntries([]);
+    setPickerParent(null);
+    setPickerPath(null);
+    try {
+      const home = await fsHome();
+      setHomePath(home.path);
+      await loadPickerPath(home.path);
+    } catch (err: unknown) {
+      setPickerError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function closeNewConversationDialog() {
+    if (newConversationCreating) return;
+    setNewConversationOpen(false);
+  }
+
+  async function onConfirmNewConversation() {
+    if (!pickerPath) return;
+    setPickerError(null);
+    setNewConversationCreating(true);
+    try {
+      const title = newConversationTitle.trim();
+      const project = await createProject(pickerPath);
+      const conversation = await createConversation(project.id, title || undefined);
+
+      const [nextConversations, nextProjects] = await Promise.all([listConversations(), listProjects()]);
+      setConversations(nextConversations);
+      setProjects(nextProjects);
+
+      setActiveConversationId(conversation.id);
+      setMessageText("");
+      setNewConversationOpen(false);
+    } catch (err: unknown) {
+      setPickerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNewConversationCreating(false);
     }
   }
 
@@ -582,31 +669,10 @@ export default function App() {
           <div className="muted">API: {apiBase()}</div>
         </div>
 
-        <form className="newConversation" onSubmit={onCreateConversation}>
-          <label>
-            <div className="label">Project directory</div>
-            <input
-              value={newProjectPath}
-              onChange={(e) => setNewProjectPath(e.target.value)}
-              placeholder="/path/to/project"
-              className="input"
-            />
-          </label>
-          <label>
-            <div className="label">Conversation title</div>
-            <input
-              value={newConversationTitle}
-              onChange={(e) => setNewConversationTitle(e.target.value)}
-              placeholder="Optional"
-              className="input"
-            />
-          </label>
-          <button className="button" type="submit">
-            New conversation
-          </button>
-        </form>
+        <button className="newConversationRow" type="button" onClick={() => openNewConversationDialog()}>
+          New conversation…
+        </button>
 
-        <div className="sectionTitle">Conversations</div>
         <div className="conversationList">
           {conversations.map((c) => (
             <button
@@ -615,13 +681,15 @@ export default function App() {
               onClick={() => setActiveConversationId(c.id)}
               type="button"
             >
-              <div className="conversationTitle">{c.title}</div>
-              <div className="conversationMeta">{c.id.slice(0, 8)}</div>
+              <div className="conversationTopRow">
+                <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
+                <div className="conversationTime">{formatUpdatedAt(c.updated_at_ms)}</div>
+              </div>
             </button>
           ))}
           {conversations.length === 0 ? (
             <div className="muted" style={{ padding: 12 }}>
-              Create a conversation from a project directory to get started.
+              Click “New conversation…” to start from a project directory.
             </div>
           ) : null}
         </div>
@@ -630,7 +698,9 @@ export default function App() {
       <main className="chat">
         <div className="chatHeader">
           <div className="chatTitle">
-            {activeConversation ? activeConversation.title : "No conversation"}
+            {activeConversation
+              ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
+              : "No conversation"}
             {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
           </div>
           <div className="chatActions">
@@ -726,6 +796,100 @@ export default function App() {
           </button>
         </form>
       </main>
+
+      {newConversationOpen ? (
+        <div className="modalBackdrop" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modalHeader">
+              <div className="modalTitle">New conversation</div>
+              <button
+                className="button"
+                type="button"
+                onClick={() => closeNewConversationDialog()}
+                disabled={newConversationCreating}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="modalBody">
+              {pickerError ? <div className="modalError">{pickerError}</div> : null}
+
+              <label className="field">
+                <div className="label">Conversation title (optional)</div>
+                <input
+                  className="input"
+                  value={newConversationTitle}
+                  onChange={(e) => setNewConversationTitle(e.target.value)}
+                  placeholder="Optional"
+                  disabled={newConversationCreating}
+                />
+              </label>
+
+              <div className="field">
+                <div className="label">Project directory</div>
+                <div className="pickerHeader">
+                  <button
+                    className="button buttonSmall"
+                    type="button"
+                    onClick={() => {
+                      if (homePath) loadPickerPath(homePath).catch(() => {});
+                    }}
+                    disabled={!homePath || pickerLoading || newConversationCreating}
+                  >
+                    Home
+                  </button>
+                  <button
+                    className="button buttonSmall"
+                    type="button"
+                    onClick={() => {
+                      if (pickerParent) loadPickerPath(pickerParent).catch(() => {});
+                    }}
+                    disabled={!pickerParent || pickerLoading || newConversationCreating}
+                  >
+                    Up
+                  </button>
+                  <div className="pickerPath">{pickerPath ?? "Loading…"}</div>
+                </div>
+
+                <div className="pickerList">
+                  {pickerLoading ? <div className="muted">Loading…</div> : null}
+                  {pickerEntries.map((entry) => {
+                    const isOpenable = entry.kind === "dir" || entry.kind === "symlink";
+                    return (
+                      <button
+                        key={entry.path}
+                        type="button"
+                        className={isOpenable ? "pickerEntry" : "pickerEntry pickerEntryDisabled"}
+                        onClick={() => {
+                          if (isOpenable) loadPickerPath(entry.path).catch(() => {});
+                        }}
+                        disabled={!isOpenable || pickerLoading || newConversationCreating}
+                        title={entry.path}
+                      >
+                        <span className="pickerEntryName">{entry.name}</span>
+                        <span className="pickerEntryKind">{entry.kind}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="modalFooter">
+              <div className="muted">{pickerPath ? `Selected: ${pickerPath}` : ""}</div>
+              <button
+                className="button"
+                type="button"
+                onClick={() => onConfirmNewConversation().catch(() => {})}
+                disabled={!pickerPath || pickerLoading || newConversationCreating}
+              >
+                {newConversationCreating ? "Creating…" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -15,7 +15,12 @@ use crate::server::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/projects", post(create_project).get(list_projects))
-        .route("/conversations", post(create_conversation).get(list_conversations))
+        .route(
+            "/conversations",
+            post(create_conversation).get(list_conversations),
+        )
+        .route("/fs/home", get(fs_home))
+        .route("/fs/list", get(fs_list))
         .route(
             "/conversations/:conversation_id",
             get(get_conversation).patch(update_conversation),
@@ -36,8 +41,142 @@ pub fn router() -> Router<AppState> {
             "/conversations/:conversation_id/messages",
             post(post_user_message),
         )
-        .route("/interactions/:interaction_id/respond", post(respond_interaction))
+        .route(
+            "/interactions/:interaction_id/respond",
+            post(respond_interaction),
+        )
         .route("/interactions/pending", get(list_all_pending_interactions))
+}
+
+fn home_dir() -> PathBuf {
+    directories::UserDirs::new()
+        .map(|d| d.home_dir().to_path_buf())
+        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+        .or_else(|| std::env::var("USERPROFILE").ok().map(PathBuf::from))
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+fn expand_user_path(path: &str) -> PathBuf {
+    if path == "~" {
+        return home_dir();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return home_dir().join(rest);
+    }
+    PathBuf::from(path)
+}
+
+#[derive(Debug, Serialize)]
+struct FsHomeResponse {
+    path: String,
+}
+
+async fn fs_home(State(_state): State<AppState>) -> Result<Json<FsHomeResponse>, ApiError> {
+    let home = home_dir();
+    Ok(Json(FsHomeResponse {
+        path: home.to_string_lossy().to_string(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct FsListQuery {
+    path: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum FsEntryKind {
+    Dir,
+    File,
+    Symlink,
+    Other,
+}
+
+#[derive(Debug, Serialize)]
+struct FsEntry {
+    name: String,
+    path: String,
+    kind: FsEntryKind,
+}
+
+#[derive(Debug, Serialize)]
+struct FsListResponse {
+    path: String,
+    parent: Option<String>,
+    entries: Vec<FsEntry>,
+}
+
+async fn fs_list(
+    State(_state): State<AppState>,
+    Query(q): Query<FsListQuery>,
+) -> Result<Json<FsListResponse>, ApiError> {
+    let raw = q.path.as_deref().unwrap_or("~");
+    let path = expand_user_path(raw);
+    if !path.is_absolute() {
+        return Err(ApiError::bad_request("path must be absolute"));
+    }
+
+    let md = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| ApiError::bad_request(format!("invalid path: {e}")))?;
+    if !md.is_dir() {
+        return Err(ApiError::bad_request("path must be a directory"));
+    }
+
+    let parent = path.parent().map(|p| p.to_string_lossy().to_string());
+
+    let mut dir = tokio::fs::read_dir(&path)
+        .await
+        .map_err(|e| ApiError::bad_request(format!("failed to read directory: {e}")))?;
+
+    let mut entries: Vec<FsEntry> = Vec::new();
+    loop {
+        let entry = dir
+            .next_entry()
+            .await
+            .map_err(|e| ApiError::bad_request(format!("failed to read directory: {e}")))?;
+        let Some(entry) = entry else {
+            break;
+        };
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        let full_path = entry.path();
+        let kind = match entry.file_type().await {
+            Ok(ft) if ft.is_dir() => FsEntryKind::Dir,
+            Ok(ft) if ft.is_file() => FsEntryKind::File,
+            Ok(ft) if ft.is_symlink() => FsEntryKind::Symlink,
+            Ok(_) => FsEntryKind::Other,
+            Err(_) => FsEntryKind::Other,
+        };
+
+        entries.push(FsEntry {
+            name,
+            path: full_path.to_string_lossy().to_string(),
+            kind,
+        });
+        if entries.len() > 5000 {
+            break;
+        }
+    }
+
+    entries.sort_by(|a, b| {
+        let rank = |k: &FsEntryKind| match k {
+            FsEntryKind::Dir => 0,
+            FsEntryKind::Symlink => 1,
+            FsEntryKind::File => 2,
+            FsEntryKind::Other => 3,
+        };
+        rank(&a.kind)
+            .cmp(&rank(&b.kind))
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(Json(FsListResponse {
+        path: path.to_string_lossy().to_string(),
+        parent,
+        entries,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,7 +370,9 @@ async fn export_conversation(
 
     let format = q.format.as_deref().unwrap_or("json");
     match format {
-        "json" => Ok(Json(json!({ "conversation": conversation, "events": events })).into_response()),
+        "json" => {
+            Ok(Json(json!({ "conversation": conversation, "events": events })).into_response())
+        }
         "md" | "markdown" => {
             let mut out = String::new();
             out.push_str("# ");
@@ -266,7 +407,9 @@ async fn export_conversation(
             )
                 .into_response())
         }
-        _ => Err(ApiError::bad_request("unknown export format (use json or md)")),
+        _ => Err(ApiError::bad_request(
+            "unknown export format (use json or md)",
+        )),
     }
 }
 
@@ -351,14 +494,22 @@ async fn post_user_message(
 
     let event = state
         .db
-        .append_event(conversation_id, "user_message", &json!({ "text": user_text }))
+        .append_event(
+            conversation_id,
+            "user_message",
+            &json!({ "text": user_text }),
+        )
         .await
         .map_err(ApiError::internal)?;
     let _ = state.event_tx.send(event.clone());
 
     let running = state
         .db
-        .append_event(conversation_id, "run_status", &json!({ "status": "running" }))
+        .append_event(
+            conversation_id,
+            "run_status",
+            &json!({ "status": "running" }),
+        )
         .await
         .map_err(ApiError::internal)?;
     let _ = state.event_tx.send(running);

@@ -39,6 +39,18 @@ export type InteractionRequest = {
   response: unknown | null;
 };
 
+export type FsEntry = {
+  name: string;
+  path: string;
+  kind: "dir" | "file" | "symlink" | "other";
+};
+
+export type FsListResponse = {
+  path: string;
+  parent: string | null;
+  entries: FsEntry[];
+};
+
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";
 
 export function apiBase(): string {
@@ -70,6 +82,10 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listConversations(): Promise<Conversation[]> {
   return jsonFetch<Conversation[]>("/api/conversations");
+}
+
+export function listProjects(): Promise<Project[]> {
+  return jsonFetch<Project[]>("/api/projects");
 }
 
 export function createProject(rootPath: string, name?: string): Promise<Project> {
@@ -123,4 +139,13 @@ export function respondInteraction(
     method: "POST",
     body: JSON.stringify({ action, text }),
   });
+}
+
+export function fsHome(): Promise<{ path: string }> {
+  return jsonFetch<{ path: string }>("/api/fs/home");
+}
+
+export function fsList(path: string): Promise<FsListResponse> {
+  const params = new URLSearchParams({ path });
+  return jsonFetch<FsListResponse>(`/api/fs/list?${params.toString()}`);
 }

@@ -1,15 +1,15 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
-use axum::http::{header, Method};
+use axum::http::{Method, header};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
-use tokio::sync::broadcast;
 use tokio::sync::Semaphore;
+use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -63,7 +63,13 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
 pub fn build_router(state: AppState, static_dir: Option<&std::path::Path>) -> Router {
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
         .allow_origin(Any)
         .allow_headers(Any)
         .expose_headers([header::CONTENT_TYPE]);
@@ -165,7 +171,12 @@ mod tests {
         );
 
         let response = app
-            .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .expect("oneshot");
         assert_eq!(response.status(), 200);

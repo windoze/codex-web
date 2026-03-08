@@ -307,3 +307,6 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Milestone 4 — Multi-conversation polish
 - [x] Milestone 5 — Schema-typed Codex protocol
 - [ ] Milestone 6 — GitHub (optional, later)
+
+## 14) Step-by-step Task Log (incremental)
+- [x] Sidebar + new conversation dialog: home-rooted directory picker; list shows title fallback and updated time

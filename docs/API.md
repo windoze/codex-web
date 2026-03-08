@@ -63,3 +63,18 @@ Interaction requests represent “blocking” prompts (e.g., approvals) that can
 
 - `GET /ws?conversation_id=<uuid>`
   - Sends JSON-encoded `ConversationEvent` objects for that conversation.
+
+## Filesystem (directory picker)
+
+These endpoints exist to support the UI’s “New conversation…” directory picker.
+
+Notes:
+- Paths must be absolute (the server will reject relative paths).
+- The default list path is `~` (expanded to the user’s home directory).
+
+- `GET /api/fs/home`
+  - Response: `{ "path": "/abs/path/to/home" }`
+- `GET /api/fs/list?path=/abs/path`
+  - Response:
+    - `{ "path": "/abs/path", "parent": "/abs", "entries": FsEntry[] }`
+    - `FsEntry` = `{ "name": "src", "path": "/abs/path/src", "kind": "dir"|"file"|"symlink"|"other" }`

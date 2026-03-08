@@ -31,7 +31,7 @@ VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 ## Manual reconnect verification (Milestone 1)
 
 1. Start the daemon and UI.
-2. Create a conversation from a project directory.
+2. Click “New conversation…” and pick a project directory (starts at your home directory).
 3. Send a few messages.
 4. Close the browser tab.
 5. Reopen the UI and reselect the conversation.
