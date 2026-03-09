@@ -1376,38 +1376,24 @@
     },
     "AdditionalMacOsPermissions": {
       "type": "object",
+      "required": [
+        "accessibility",
+        "automations",
+        "calendar",
+        "preferences"
+      ],
       "properties": {
         "accessibility": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "automations": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsAutomationValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/definitions/MacOsAutomationPermission"
         },
         "calendar": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "preferences": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsPreferencesValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/definitions/MacOsPreferencesPermission"
         }
       }
     },
@@ -1877,27 +1863,39 @@
         }
       }
     },
-    "MacOsAutomationValue": {
-      "anyOf": [
+    "MacOsAutomationPermission": {
+      "oneOf": [
         {
-          "type": "boolean"
+          "type": "string",
+          "enum": [
+            "none",
+            "all"
+          ]
         },
         {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "object",
+          "required": [
+            "bundle_ids"
+          ],
+          "properties": {
+            "bundle_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "title": "BundleIdsMacOsAutomationPermission"
         }
       ]
     },
-    "MacOsPreferencesValue": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "string"
-        }
+    "MacOsPreferencesPermission": {
+      "type": "string",
+      "enum": [
+        "none",
+        "read_only",
+        "read_write"
       ]
     },
     "McpServerElicitationRequestParams": {
@@ -3730,40 +3728,26 @@
         }
       }
     },
-    "MacOsPermissions": {
+    "MacOsSeatbeltProfileExtensions": {
       "type": "object",
+      "required": [
+        "macos_accessibility",
+        "macos_automation",
+        "macos_calendar",
+        "macos_preferences"
+      ],
       "properties": {
-        "accessibility": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "macos_accessibility": {
+          "type": "boolean"
         },
-        "automations": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsAutomationValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "macos_automation": {
+          "$ref": "#/definitions/MacOsAutomationPermission"
         },
-        "calendar": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "macos_calendar": {
+          "type": "boolean"
         },
-        "preferences": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsPreferencesValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "macos_preferences": {
+          "$ref": "#/definitions/MacOsPreferencesPermission"
         }
       }
     },
@@ -3896,7 +3880,7 @@
         "macos": {
           "anyOf": [
             {
-              "$ref": "#/definitions/MacOsPermissions"
+              "$ref": "#/definitions/MacOsSeatbeltProfileExtensions"
             },
             {
               "type": "null"
@@ -8577,17 +8561,10 @@
               "null"
             ]
           },
-          "serviceTier": {
+          "sandbox": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/v2/ServiceTier"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "$ref": "#/definitions/v2/SandboxMode"
               },
               {
                 "type": "null"
@@ -8610,10 +8587,17 @@
           "threadId": {
             "type": "string"
           },
-          "sandbox": {
+          "serviceTier": {
             "anyOf": [
               {
-                "$ref": "#/definitions/v2/SandboxMode"
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/v2/ServiceTier"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               {
                 "type": "null"
@@ -8689,9 +8673,6 @@
               "null"
             ]
           },
-          "threadId": {
-            "type": "string"
-          },
           "serviceTier": {
             "anyOf": [
               {
@@ -8708,6 +8689,9 @@
                 "type": "null"
               }
             ]
+          },
+          "threadId": {
+            "type": "string"
           },
           "sandbox": {
             "anyOf": [
@@ -12648,6 +12632,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "pluginDisplayNames": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

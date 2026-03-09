@@ -117,38 +117,24 @@
     },
     "AdditionalMacOsPermissions": {
       "type": "object",
+      "required": [
+        "accessibility",
+        "automations",
+        "calendar",
+        "preferences"
+      ],
       "properties": {
         "accessibility": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "automations": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsAutomationValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/definitions/MacOsAutomationPermission"
         },
         "calendar": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "preferences": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsPreferencesValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/definitions/MacOsPreferencesPermission"
         }
       }
     },
@@ -387,27 +373,39 @@
         }
       ]
     },
-    "MacOsAutomationValue": {
-      "anyOf": [
+    "MacOsAutomationPermission": {
+      "oneOf": [
         {
-          "type": "boolean"
+          "type": "string",
+          "enum": [
+            "none",
+            "all"
+          ]
         },
         {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "object",
+          "required": [
+            "bundle_ids"
+          ],
+          "properties": {
+            "bundle_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "title": "BundleIdsMacOsAutomationPermission"
         }
       ]
     },
-    "MacOsPreferencesValue": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "string"
-        }
+    "MacOsPreferencesPermission": {
+      "type": "string",
+      "enum": [
+        "none",
+        "read_only",
+        "read_write"
       ]
     },
     "NetworkApprovalContext": {

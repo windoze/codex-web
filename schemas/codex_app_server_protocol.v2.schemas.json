@@ -1065,17 +1065,10 @@
             "null"
           ]
         },
-        "serviceTier": {
+        "sandbox": {
           "anyOf": [
             {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ServiceTier"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "$ref": "#/definitions/SandboxMode"
             },
             {
               "type": "null"
@@ -1098,10 +1091,17 @@
         "threadId": {
           "type": "string"
         },
-        "sandbox": {
+        "serviceTier": {
           "anyOf": [
             {
-              "$ref": "#/definitions/SandboxMode"
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ServiceTier"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             {
               "type": "null"
@@ -1177,9 +1177,6 @@
             "null"
           ]
         },
-        "threadId": {
-          "type": "string"
-        },
         "serviceTier": {
           "anyOf": [
             {
@@ -1196,6 +1193,9 @@
               "type": "null"
             }
           ]
+        },
+        "threadId": {
+          "type": "string"
         },
         "sandbox": {
           "anyOf": [
@@ -5136,6 +5136,13 @@
         },
         "name": {
           "type": "string"
+        },
+        "pluginDisplayNames": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -8059,113 +8066,80 @@
         }
       }
     },
-    "RealtimeAudioFrame": {
+    "MacOsSeatbeltProfileExtensions": {
       "type": "object",
       "required": [
-        "data",
-        "num_channels",
-        "sample_rate"
+        "macos_accessibility",
+        "macos_automation",
+        "macos_calendar",
+        "macos_preferences"
       ],
       "properties": {
-        "data": {
-          "type": "string"
+        "macos_accessibility": {
+          "type": "boolean"
         },
-        "num_channels": {
-          "type": "integer",
-          "format": "uint16",
-          "minimum": 0.0
+        "macos_automation": {
+          "$ref": "#/definitions/MacOsAutomationPermission"
         },
-        "sample_rate": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
+        "macos_calendar": {
+          "type": "boolean"
         },
-        "samples_per_channel": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint32",
-          "minimum": 0.0
+        "macos_preferences": {
+          "$ref": "#/definitions/MacOsPreferencesPermission"
         }
       }
     },
-    "RequestUserInputQuestion": {
+    "CustomPrompt": {
       "type": "object",
       "required": [
-        "header",
-        "id",
-        "question"
+        "content",
+        "name",
+        "path"
       ],
       "properties": {
-        "header": {
+        "argument_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
           "type": "string"
         },
-        "id": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
           "type": "string"
         },
-        "isOther": {
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "InitializeCapabilities": {
+      "description": "Client-declared capabilities negotiated during initialize.",
+      "type": "object",
+      "properties": {
+        "experimentalApi": {
+          "description": "Opt into receiving experimental API methods and fields.",
           "default": false,
           "type": "boolean"
         },
-        "isSecret": {
-          "default": false,
-          "type": "boolean"
-        },
-        "options": {
+        "optOutNotificationMethods": {
+          "description": "Exact notification method names that should be suppressed for this connection (for example `codex/event/session_configured`).",
           "type": [
             "array",
             "null"
           ],
           "items": {
-            "$ref": "#/definitions/RequestUserInputQuestionOption"
+            "type": "string"
           }
-        },
-        "question": {
-          "type": "string"
         }
       }
-    },
-    "Duration": {
-      "type": "object",
-      "required": [
-        "nanos",
-        "secs"
-      ],
-      "properties": {
-        "nanos": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "secs": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        }
-      }
-    },
-    "RealtimeHandoffMessage": {
-      "type": "object",
-      "required": [
-        "role",
-        "text"
-      ],
-      "properties": {
-        "role": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        }
-      }
-    },
-    "NetworkPolicyRuleAction": {
-      "type": "string",
-      "enum": [
-        "allow",
-        "deny"
-      ]
     },
     "RequestUserInputQuestionOption": {
       "type": "object",
@@ -8179,243 +8153,6 @@
         },
         "label": {
           "type": "string"
-        }
-      }
-    },
-    "ReviewFinding": {
-      "description": "A single review finding describing an observed issue or recommendation.",
-      "type": "object",
-      "required": [
-        "body",
-        "code_location",
-        "confidence_score",
-        "priority",
-        "title"
-      ],
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "code_location": {
-          "$ref": "#/definitions/ReviewCodeLocation"
-        },
-        "confidence_score": {
-          "type": "number",
-          "format": "float"
-        },
-        "priority": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "title": {
-          "type": "string"
-        }
-      }
-    },
-    "PlanItemArg": {
-      "type": "object",
-      "required": [
-        "status",
-        "step"
-      ],
-      "properties": {
-        "status": {
-          "$ref": "#/definitions/StepStatus"
-        },
-        "step": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "TokenUsageInfo": {
-      "type": "object",
-      "required": [
-        "last_token_usage",
-        "total_token_usage"
-      ],
-      "properties": {
-        "last_token_usage": {
-          "$ref": "#/definitions/TokenUsage"
-        },
-        "model_context_window": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "int64"
-        },
-        "total_token_usage": {
-          "$ref": "#/definitions/TokenUsage"
-        }
-      }
-    },
-    "NetworkApprovalProtocol": {
-      "type": "string",
-      "enum": [
-        "http",
-        "https",
-        "socks5Tcp",
-        "socks5Udp"
-      ]
-    },
-    "ReviewDecision": {
-      "description": "User's decision in response to an ExecApprovalRequest.",
-      "oneOf": [
-        {
-          "description": "User has approved this command and the agent should execute it.",
-          "type": "string",
-          "enum": [
-            "approved"
-          ]
-        },
-        {
-          "description": "User has approved this command and wants to apply the proposed execpolicy amendment so future matching commands are permitted.",
-          "type": "object",
-          "required": [
-            "approved_execpolicy_amendment"
-          ],
-          "properties": {
-            "approved_execpolicy_amendment": {
-              "type": "object",
-              "required": [
-                "proposed_execpolicy_amendment"
-              ],
-              "properties": {
-                "proposed_execpolicy_amendment": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          },
-          "additionalProperties": false,
-          "title": "ApprovedExecpolicyAmendmentReviewDecision"
-        },
-        {
-          "description": "User has approved this request and wants future prompts in the same session-scoped approval cache to be automatically approved for the remainder of the session.",
-          "type": "string",
-          "enum": [
-            "approved_for_session"
-          ]
-        },
-        {
-          "description": "User chose to persist a network policy rule (allow/deny) for future requests to the same host.",
-          "type": "object",
-          "required": [
-            "network_policy_amendment"
-          ],
-          "properties": {
-            "network_policy_amendment": {
-              "type": "object",
-              "required": [
-                "network_policy_amendment"
-              ],
-              "properties": {
-                "network_policy_amendment": {
-                  "$ref": "#/definitions/NetworkPolicyAmendment"
-                }
-              }
-            }
-          },
-          "additionalProperties": false,
-          "title": "NetworkPolicyAmendmentReviewDecision"
-        },
-        {
-          "description": "User has denied this command and the agent should not execute it, but it should continue the session and try something else.",
-          "type": "string",
-          "enum": [
-            "denied"
-          ]
-        },
-        {
-          "description": "User has denied this command and the agent should not do anything until the user's next command.",
-          "type": "string",
-          "enum": [
-            "abort"
-          ]
-        }
-      ]
-    },
-    "FuzzyFileSearchSessionCompletedNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "FuzzyFileSearchSessionCompletedNotification",
-      "type": "object",
-      "required": [
-        "sessionId"
-      ],
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        }
-      }
-    },
-    "MacOsAutomationValue": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      ]
-    },
-    "AgentMessageContent": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "text",
-            "type"
-          ],
-          "properties": {
-            "text": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "Text"
-              ],
-              "title": "TextAgentMessageContentType"
-            }
-          },
-          "title": "TextAgentMessageContent"
-        }
-      ]
-    },
-    "CollabAgentRef": {
-      "type": "object",
-      "required": [
-        "thread_id"
-      ],
-      "properties": {
-        "agent_nickname": {
-          "description": "Optional nickname assigned to an AgentControl-spawned sub-agent.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "agent_role": {
-          "description": "Optional role (agent_role) assigned to an AgentControl-spawned sub-agent.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "thread_id": {
-          "description": "Thread ID of the receiver/new agent.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/ThreadId"
-            }
-          ]
         }
       }
     },
@@ -8458,234 +8195,24 @@
         }
       }
     },
-    "FileChange": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "content",
-            "type"
-          ],
-          "properties": {
-            "content": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "add"
-              ],
-              "title": "AddFileChangeType"
-            }
-          },
-          "title": "AddFileChange"
-        },
-        {
-          "type": "object",
-          "required": [
-            "content",
-            "type"
-          ],
-          "properties": {
-            "content": {
-              "type": "string"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "delete"
-              ],
-              "title": "DeleteFileChangeType"
-            }
-          },
-          "title": "DeleteFileChange"
-        },
-        {
-          "type": "object",
-          "required": [
-            "type",
-            "unified_diff"
-          ],
-          "properties": {
-            "move_path": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "update"
-              ],
-              "title": "UpdateFileChangeType"
-            },
-            "unified_diff": {
-              "type": "string"
-            }
-          },
-          "title": "UpdateFileChange"
-        }
-      ]
-    },
-    "MacOsPermissions": {
-      "type": "object",
-      "properties": {
-        "accessibility": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "automations": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsAutomationValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "calendar": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "preferences": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsPreferencesValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "ReviewLineRange": {
-      "description": "Inclusive line range in a file associated with the finding.",
+    "Duration": {
       "type": "object",
       "required": [
-        "end",
-        "start"
+        "nanos",
+        "secs"
       ],
       "properties": {
-        "end": {
+        "nanos": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
         },
-        "start": {
+        "secs": {
           "type": "integer",
-          "format": "uint32",
+          "format": "uint64",
           "minimum": 0.0
         }
       }
-    },
-    "RealtimeEvent": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "SessionUpdated"
-          ],
-          "properties": {
-            "SessionUpdated": {
-              "type": "object",
-              "required": [
-                "session_id"
-              ],
-              "properties": {
-                "instructions": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "session_id": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "additionalProperties": false,
-          "title": "SessionUpdatedRealtimeEvent"
-        },
-        {
-          "type": "object",
-          "required": [
-            "AudioOut"
-          ],
-          "properties": {
-            "AudioOut": {
-              "$ref": "#/definitions/RealtimeAudioFrame"
-            }
-          },
-          "additionalProperties": false,
-          "title": "AudioOutRealtimeEvent"
-        },
-        {
-          "type": "object",
-          "required": [
-            "ConversationItemAdded"
-          ],
-          "properties": {
-            "ConversationItemAdded": true
-          },
-          "additionalProperties": false,
-          "title": "ConversationItemAddedRealtimeEvent"
-        },
-        {
-          "type": "object",
-          "required": [
-            "ConversationItemDone"
-          ],
-          "properties": {
-            "ConversationItemDone": {
-              "type": "object",
-              "required": [
-                "item_id"
-              ],
-              "properties": {
-                "item_id": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "additionalProperties": false,
-          "title": "ConversationItemDoneRealtimeEvent"
-        },
-        {
-          "type": "object",
-          "required": [
-            "HandoffRequested"
-          ],
-          "properties": {
-            "HandoffRequested": {
-              "$ref": "#/definitions/RealtimeHandoffRequested"
-            }
-          },
-          "additionalProperties": false,
-          "title": "HandoffRequestedRealtimeEvent"
-        },
-        {
-          "type": "object",
-          "required": [
-            "Error"
-          ],
-          "properties": {
-            "Error": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "title": "ErrorRealtimeEvent"
-        }
-      ]
     },
     "TokenUsage": {
       "type": "object",
@@ -8719,152 +8246,98 @@
         }
       }
     },
-    "MacOsPreferencesValue": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "string"
-        }
-      ]
-    },
-    "ExecCommandStatus": {
-      "type": "string",
-      "enum": [
-        "completed",
-        "failed",
-        "declined"
-      ]
-    },
-    "ClientInfo": {
+    "PermissionProfile": {
       "type": "object",
-      "required": [
-        "name",
-        "version"
-      ],
       "properties": {
-        "name": {
-          "type": "string"
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
+        "file_system": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FileSystemPermissions"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
-        "version": {
-          "type": "string"
+        "macos": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MacOsSeatbeltProfileExtensions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NetworkPermissions"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
-    "NetworkPolicyAmendment": {
-      "type": "object",
-      "required": [
-        "action",
-        "host"
-      ],
-      "properties": {
-        "action": {
-          "$ref": "#/definitions/NetworkPolicyRuleAction"
-        },
-        "host": {
-          "type": "string"
-        }
-      }
-    },
-    "RealtimeHandoffRequested": {
-      "type": "object",
-      "required": [
-        "handoff_id",
-        "input_transcript",
-        "item_id",
-        "messages"
-      ],
-      "properties": {
-        "handoff_id": {
-          "type": "string"
-        },
-        "input_transcript": {
-          "type": "string"
-        },
-        "item_id": {
-          "type": "string"
-        },
-        "messages": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/RealtimeHandoffMessage"
-          }
-        }
-      }
-    },
-    "McpStartupStatus": {
+    "MacOsAutomationPermission": {
       "oneOf": [
         {
-          "type": "object",
-          "required": [
-            "state"
-          ],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "starting"
-              ]
-            }
-          },
-          "title": "StartingMcpStartupStatus"
+          "type": "string",
+          "enum": [
+            "none",
+            "all"
+          ]
         },
         {
           "type": "object",
           "required": [
-            "state"
+            "bundle_ids"
           ],
           "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "ready"
-              ]
+            "bundle_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
-          "title": "ReadyMcpStartupStatus"
-        },
-        {
-          "type": "object",
-          "required": [
-            "error",
-            "state"
-          ],
-          "properties": {
-            "error": {
-              "type": "string"
-            },
-            "state": {
-              "type": "string",
-              "enum": [
-                "failed"
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
-            "state"
-          ],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": [
-                "cancelled"
-              ]
-            }
-          },
-          "title": "CancelledMcpStartupStatus"
+          "additionalProperties": false,
+          "title": "BundleIdsMacOsAutomationPermission"
         }
       ]
+    },
+    "NetworkApprovalProtocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https",
+        "socks5Tcp",
+        "socks5Udp"
+      ]
+    },
+    "TokenUsageInfo": {
+      "type": "object",
+      "required": [
+        "last_token_usage",
+        "total_token_usage"
+      ],
+      "properties": {
+        "last_token_usage": {
+          "$ref": "#/definitions/TokenUsage"
+        },
+        "model_context_window": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "total_token_usage": {
+          "$ref": "#/definitions/TokenUsage"
+        }
+      }
     },
     "ParsedCommand": {
       "oneOf": [
@@ -8977,6 +8450,95 @@
         }
       ]
     },
+    "ExecCommandSource": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "user_shell",
+        "unified_exec_startup",
+        "unified_exec_interaction"
+      ]
+    },
+    "ReviewFinding": {
+      "description": "A single review finding describing an observed issue or recommendation.",
+      "type": "object",
+      "required": [
+        "body",
+        "code_location",
+        "confidence_score",
+        "priority",
+        "title"
+      ],
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "code_location": {
+          "$ref": "#/definitions/ReviewCodeLocation"
+        },
+        "confidence_score": {
+          "type": "number",
+          "format": "float"
+        },
+        "priority": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "StepStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ]
+    },
+    "ReviewCodeLocation": {
+      "description": "Location of the code related to a review finding.",
+      "type": "object",
+      "required": [
+        "absolute_file_path",
+        "line_range"
+      ],
+      "properties": {
+        "absolute_file_path": {
+          "type": "string"
+        },
+        "line_range": {
+          "$ref": "#/definitions/ReviewLineRange"
+        }
+      }
+    },
+    "FuzzyFileSearchParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FuzzyFileSearchParams",
+      "type": "object",
+      "required": [
+        "query",
+        "roots"
+      ],
+      "properties": {
+        "cancellationToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "NetworkApprovalContext": {
       "type": "object",
       "required": [
@@ -8992,20 +8554,433 @@
         }
       }
     },
-    "McpStartupFailure": {
+    "Result_of_CallToolResult_or_String": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Ok"
+          ],
+          "properties": {
+            "Ok": {
+              "$ref": "#/definitions/CallToolResult"
+            }
+          },
+          "title": "OkResult_of_CallToolResult_or_String"
+        },
+        {
+          "type": "object",
+          "required": [
+            "Err"
+          ],
+          "properties": {
+            "Err": {
+              "type": "string"
+            }
+          },
+          "title": "ErrResult_of_CallToolResult_or_String"
+        }
+      ]
+    },
+    "McpStartupStatus": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting"
+              ]
+            }
+          },
+          "title": "StartingMcpStartupStatus"
+        },
+        {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "ready"
+              ]
+            }
+          },
+          "title": "ReadyMcpStartupStatus"
+        },
+        {
+          "type": "object",
+          "required": [
+            "error",
+            "state"
+          ],
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "failed"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "cancelled"
+              ]
+            }
+          },
+          "title": "CancelledMcpStartupStatus"
+        }
+      ]
+    },
+    "RealtimeAudioFrame": {
       "type": "object",
       "required": [
-        "error",
-        "server"
+        "data",
+        "num_channels",
+        "sample_rate"
       ],
       "properties": {
-        "error": {
+        "data": {
           "type": "string"
         },
-        "server": {
+        "num_channels": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "sample_rate": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "samples_per_channel": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "RealtimeHandoffRequested": {
+      "type": "object",
+      "required": [
+        "handoff_id",
+        "input_transcript",
+        "item_id",
+        "messages"
+      ],
+      "properties": {
+        "handoff_id": {
+          "type": "string"
+        },
+        "input_transcript": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RealtimeHandoffMessage"
+          }
+        }
+      }
+    },
+    "RealtimeHandoffMessage": {
+      "type": "object",
+      "required": [
+        "role",
+        "text"
+      ],
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "text": {
           "type": "string"
         }
       }
+    },
+    "FuzzyFileSearchSessionCompletedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FuzzyFileSearchSessionCompletedNotification",
+      "type": "object",
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      }
+    },
+    "InitializeParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InitializeParams",
+      "type": "object",
+      "required": [
+        "clientInfo"
+      ],
+      "properties": {
+        "capabilities": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/InitializeCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clientInfo": {
+          "$ref": "#/definitions/ClientInfo"
+        }
+      }
+    },
+    "RequestUserInputQuestion": {
+      "type": "object",
+      "required": [
+        "header",
+        "id",
+        "question"
+      ],
+      "properties": {
+        "header": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "isOther": {
+          "default": false,
+          "type": "boolean"
+        },
+        "isSecret": {
+          "default": false,
+          "type": "boolean"
+        },
+        "options": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/RequestUserInputQuestionOption"
+          }
+        },
+        "question": {
+          "type": "string"
+        }
+      }
+    },
+    "FileChange": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "content",
+            "type"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "add"
+              ],
+              "title": "AddFileChangeType"
+            }
+          },
+          "title": "AddFileChange"
+        },
+        {
+          "type": "object",
+          "required": [
+            "content",
+            "type"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "delete"
+              ],
+              "title": "DeleteFileChangeType"
+            }
+          },
+          "title": "DeleteFileChange"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "unified_diff"
+          ],
+          "properties": {
+            "move_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "update"
+              ],
+              "title": "UpdateFileChangeType"
+            },
+            "unified_diff": {
+              "type": "string"
+            }
+          },
+          "title": "UpdateFileChange"
+        }
+      ]
+    },
+    "AgentStatus": {
+      "description": "Agent lifecycle status, derived from emitted events.",
+      "oneOf": [
+        {
+          "description": "Agent is waiting for initialization.",
+          "type": "string",
+          "enum": [
+            "pending_init"
+          ]
+        },
+        {
+          "description": "Agent is currently running.",
+          "type": "string",
+          "enum": [
+            "running"
+          ]
+        },
+        {
+          "description": "Agent is done. Contains the final assistant message.",
+          "type": "object",
+          "required": [
+            "completed"
+          ],
+          "properties": {
+            "completed": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "title": "CompletedAgentStatus"
+        },
+        {
+          "description": "Agent encountered an error.",
+          "type": "object",
+          "required": [
+            "errored"
+          ],
+          "properties": {
+            "errored": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "title": "ErroredAgentStatus"
+        },
+        {
+          "description": "Agent has been shutdown.",
+          "type": "string",
+          "enum": [
+            "shutdown"
+          ]
+        },
+        {
+          "description": "Agent is not found.",
+          "type": "string",
+          "enum": [
+            "not_found"
+          ]
+        }
+      ]
+    },
+    "FuzzyFileSearchSessionUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FuzzyFileSearchSessionUpdatedNotification",
+      "type": "object",
+      "required": [
+        "files",
+        "query",
+        "sessionId"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FuzzyFileSearchResult"
+          }
+        },
+        "query": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      }
+    },
+    "FileSystemPermissions": {
+      "type": "object",
+      "properties": {
+        "read": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          }
+        },
+        "write": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          }
+        }
+      }
+    },
+    "MacOsPreferencesPermission": {
+      "type": "string",
+      "enum": [
+        "none",
+        "read_only",
+        "read_write"
+      ]
     },
     "TurnItem": {
       "oneOf": [
@@ -9217,19 +9192,253 @@
         }
       ]
     },
-    "StepStatus": {
-      "type": "string",
-      "enum": [
-        "pending",
-        "in_progress",
-        "completed"
+    "AgentMessageContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "text",
+            "type"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "Text"
+              ],
+              "title": "TextAgentMessageContentType"
+            }
+          },
+          "title": "TextAgentMessageContent"
+        }
       ]
     },
-    "ExecOutputStream": {
+    "NetworkPermissions": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "PlanItemArg": {
+      "type": "object",
+      "required": [
+        "status",
+        "step"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/StepStatus"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReviewDecision": {
+      "description": "User's decision in response to an ExecApprovalRequest.",
+      "oneOf": [
+        {
+          "description": "User has approved this command and the agent should execute it.",
+          "type": "string",
+          "enum": [
+            "approved"
+          ]
+        },
+        {
+          "description": "User has approved this command and wants to apply the proposed execpolicy amendment so future matching commands are permitted.",
+          "type": "object",
+          "required": [
+            "approved_execpolicy_amendment"
+          ],
+          "properties": {
+            "approved_execpolicy_amendment": {
+              "type": "object",
+              "required": [
+                "proposed_execpolicy_amendment"
+              ],
+              "properties": {
+                "proposed_execpolicy_amendment": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "title": "ApprovedExecpolicyAmendmentReviewDecision"
+        },
+        {
+          "description": "User has approved this request and wants future prompts in the same session-scoped approval cache to be automatically approved for the remainder of the session.",
+          "type": "string",
+          "enum": [
+            "approved_for_session"
+          ]
+        },
+        {
+          "description": "User chose to persist a network policy rule (allow/deny) for future requests to the same host.",
+          "type": "object",
+          "required": [
+            "network_policy_amendment"
+          ],
+          "properties": {
+            "network_policy_amendment": {
+              "type": "object",
+              "required": [
+                "network_policy_amendment"
+              ],
+              "properties": {
+                "network_policy_amendment": {
+                  "$ref": "#/definitions/NetworkPolicyAmendment"
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "title": "NetworkPolicyAmendmentReviewDecision"
+        },
+        {
+          "description": "User has denied this command and the agent should not execute it, but it should continue the session and try something else.",
+          "type": "string",
+          "enum": [
+            "denied"
+          ]
+        },
+        {
+          "description": "User has denied this command and the agent should not do anything until the user's next command.",
+          "type": "string",
+          "enum": [
+            "abort"
+          ]
+        }
+      ]
+    },
+    "CallToolResult": {
+      "description": "The server's response to a tool call.",
+      "type": "object",
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "_meta": true,
+        "content": {
+          "type": "array",
+          "items": true
+        },
+        "isError": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "structuredContent": true
+      }
+    },
+    "SessionNetworkProxyRuntime": {
+      "type": "object",
+      "required": [
+        "admin_addr",
+        "http_addr",
+        "socks_addr"
+      ],
+      "properties": {
+        "admin_addr": {
+          "type": "string"
+        },
+        "http_addr": {
+          "type": "string"
+        },
+        "socks_addr": {
+          "type": "string"
+        }
+      }
+    },
+    "ReviewLineRange": {
+      "description": "Inclusive line range in a file associated with the finding.",
+      "type": "object",
+      "required": [
+        "end",
+        "start"
+      ],
+      "properties": {
+        "end": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "start": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "McpInvocation": {
+      "type": "object",
+      "required": [
+        "server",
+        "tool"
+      ],
+      "properties": {
+        "arguments": {
+          "description": "Arguments to the tool call."
+        },
+        "server": {
+          "description": "Name of the MCP server as defined in the config.",
+          "type": "string"
+        },
+        "tool": {
+          "description": "Name of the tool as given by the MCP server.",
+          "type": "string"
+        }
+      }
+    },
+    "McpStartupFailure": {
+      "type": "object",
+      "required": [
+        "error",
+        "server"
+      ],
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        }
+      }
+    },
+    "NetworkPolicyAmendment": {
+      "type": "object",
+      "required": [
+        "action",
+        "host"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/NetworkPolicyRuleAction"
+        },
+        "host": {
+          "type": "string"
+        }
+      }
+    },
+    "TurnAbortReason": {
       "type": "string",
       "enum": [
-        "stdout",
-        "stderr"
+        "interrupted",
+        "replaced",
+        "review_ended"
       ]
     },
     "EventMsg": {
@@ -12067,95 +12276,6 @@
         }
       ]
     },
-    "FileSystemPermissions": {
-      "type": "object",
-      "properties": {
-        "read": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "$ref": "#/definitions/AbsolutePathBuf"
-          }
-        },
-        "write": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "$ref": "#/definitions/AbsolutePathBuf"
-          }
-        }
-      }
-    },
-    "McpInvocation": {
-      "type": "object",
-      "required": [
-        "server",
-        "tool"
-      ],
-      "properties": {
-        "arguments": {
-          "description": "Arguments to the tool call."
-        },
-        "server": {
-          "description": "Name of the MCP server as defined in the config.",
-          "type": "string"
-        },
-        "tool": {
-          "description": "Name of the tool as given by the MCP server.",
-          "type": "string"
-        }
-      }
-    },
-    "NetworkPermissions": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        }
-      }
-    },
-    "PermissionProfile": {
-      "type": "object",
-      "properties": {
-        "file_system": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/FileSystemPermissions"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "macos": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsPermissions"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "network": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/NetworkPermissions"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
     "ReviewOutputEvent": {
       "description": "Structured review result produced by a child review session.",
       "type": "object",
@@ -12184,95 +12304,35 @@
         }
       }
     },
-    "FuzzyFileSearchParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "FuzzyFileSearchParams",
+    "CollabAgentRef": {
       "type": "object",
       "required": [
-        "query",
-        "roots"
+        "thread_id"
       ],
       "properties": {
-        "cancellationToken": {
+        "agent_nickname": {
+          "description": "Optional nickname assigned to an AgentControl-spawned sub-agent.",
           "type": [
             "string",
             "null"
           ]
         },
-        "query": {
-          "type": "string"
-        },
-        "roots": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "ReviewCodeLocation": {
-      "description": "Location of the code related to a review finding.",
-      "type": "object",
-      "required": [
-        "absolute_file_path",
-        "line_range"
-      ],
-      "properties": {
-        "absolute_file_path": {
-          "type": "string"
-        },
-        "line_range": {
-          "$ref": "#/definitions/ReviewLineRange"
-        }
-      }
-    },
-    "CustomPrompt": {
-      "type": "object",
-      "required": [
-        "content",
-        "name",
-        "path"
-      ],
-      "properties": {
-        "argument_hint": {
+        "agent_role": {
+          "description": "Optional role (agent_role) assigned to an AgentControl-spawned sub-agent.",
           "type": [
             "string",
             "null"
           ]
         },
-        "content": {
-          "type": "string"
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
+        "thread_id": {
+          "description": "Thread ID of the receiver/new agent.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ThreadId"
+            }
           ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
         }
       }
-    },
-    "TurnAbortReason": {
-      "type": "string",
-      "enum": [
-        "interrupted",
-        "replaced",
-        "review_ended"
-      ]
-    },
-    "ExecCommandSource": {
-      "type": "string",
-      "enum": [
-        "agent",
-        "user_shell",
-        "unified_exec_startup",
-        "unified_exec_interaction"
-      ]
     },
     "ElicitationRequest": {
       "oneOf": [
@@ -12324,53 +12384,170 @@
         }
       ]
     },
-    "Result_of_CallToolResult_or_String": {
+    "NetworkPolicyRuleAction": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    },
+    "HistoryEntry": {
+      "type": "object",
+      "required": [
+        "conversation_id",
+        "text",
+        "ts"
+      ],
+      "properties": {
+        "conversation_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "ExecCommandStatus": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "declined"
+      ]
+    },
+    "RealtimeEvent": {
       "oneOf": [
         {
           "type": "object",
           "required": [
-            "Ok"
+            "SessionUpdated"
           ],
           "properties": {
-            "Ok": {
-              "$ref": "#/definitions/CallToolResult"
+            "SessionUpdated": {
+              "type": "object",
+              "required": [
+                "session_id"
+              ],
+              "properties": {
+                "instructions": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "session_id": {
+                  "type": "string"
+                }
+              }
             }
           },
-          "title": "OkResult_of_CallToolResult_or_String"
+          "additionalProperties": false,
+          "title": "SessionUpdatedRealtimeEvent"
         },
         {
           "type": "object",
           "required": [
-            "Err"
+            "AudioOut"
           ],
           "properties": {
-            "Err": {
+            "AudioOut": {
+              "$ref": "#/definitions/RealtimeAudioFrame"
+            }
+          },
+          "additionalProperties": false,
+          "title": "AudioOutRealtimeEvent"
+        },
+        {
+          "type": "object",
+          "required": [
+            "ConversationItemAdded"
+          ],
+          "properties": {
+            "ConversationItemAdded": true
+          },
+          "additionalProperties": false,
+          "title": "ConversationItemAddedRealtimeEvent"
+        },
+        {
+          "type": "object",
+          "required": [
+            "ConversationItemDone"
+          ],
+          "properties": {
+            "ConversationItemDone": {
+              "type": "object",
+              "required": [
+                "item_id"
+              ],
+              "properties": {
+                "item_id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "title": "ConversationItemDoneRealtimeEvent"
+        },
+        {
+          "type": "object",
+          "required": [
+            "HandoffRequested"
+          ],
+          "properties": {
+            "HandoffRequested": {
+              "$ref": "#/definitions/RealtimeHandoffRequested"
+            }
+          },
+          "additionalProperties": false,
+          "title": "HandoffRequestedRealtimeEvent"
+        },
+        {
+          "type": "object",
+          "required": [
+            "Error"
+          ],
+          "properties": {
+            "Error": {
               "type": "string"
             }
           },
-          "title": "ErrResult_of_CallToolResult_or_String"
+          "additionalProperties": false,
+          "title": "ErrorRealtimeEvent"
         }
       ]
     },
-    "CallToolResult": {
-      "description": "The server's response to a tool call.",
+    "ExecOutputStream": {
+      "type": "string",
+      "enum": [
+        "stdout",
+        "stderr"
+      ]
+    },
+    "ClientInfo": {
       "type": "object",
       "required": [
-        "content"
+        "name",
+        "version"
       ],
       "properties": {
-        "_meta": true,
-        "content": {
-          "type": "array",
-          "items": true
+        "name": {
+          "type": "string"
         },
-        "isError": {
+        "title": {
           "type": [
-            "boolean",
+            "string",
             "null"
           ]
         },
-        "structuredContent": true
+        "version": {
+          "type": "string"
+        }
       }
     },
     "FuzzyFileSearchResult": {
@@ -12409,178 +12586,6 @@
           "minimum": 0.0
         }
       }
-    },
-    "InitializeParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "InitializeParams",
-      "type": "object",
-      "required": [
-        "clientInfo"
-      ],
-      "properties": {
-        "capabilities": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/InitializeCapabilities"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "clientInfo": {
-          "$ref": "#/definitions/ClientInfo"
-        }
-      }
-    },
-    "InitializeCapabilities": {
-      "description": "Client-declared capabilities negotiated during initialize.",
-      "type": "object",
-      "properties": {
-        "experimentalApi": {
-          "description": "Opt into receiving experimental API methods and fields.",
-          "default": false,
-          "type": "boolean"
-        },
-        "optOutNotificationMethods": {
-          "description": "Exact notification method names that should be suppressed for this connection (for example `codex/event/session_configured`).",
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "FuzzyFileSearchSessionUpdatedNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "FuzzyFileSearchSessionUpdatedNotification",
-      "type": "object",
-      "required": [
-        "files",
-        "query",
-        "sessionId"
-      ],
-      "properties": {
-        "files": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/FuzzyFileSearchResult"
-          }
-        },
-        "query": {
-          "type": "string"
-        },
-        "sessionId": {
-          "type": "string"
-        }
-      }
-    },
-    "SessionNetworkProxyRuntime": {
-      "type": "object",
-      "required": [
-        "admin_addr",
-        "http_addr",
-        "socks_addr"
-      ],
-      "properties": {
-        "admin_addr": {
-          "type": "string"
-        },
-        "http_addr": {
-          "type": "string"
-        },
-        "socks_addr": {
-          "type": "string"
-        }
-      }
-    },
-    "HistoryEntry": {
-      "type": "object",
-      "required": [
-        "conversation_id",
-        "text",
-        "ts"
-      ],
-      "properties": {
-        "conversation_id": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "ts": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        }
-      }
-    },
-    "AgentStatus": {
-      "description": "Agent lifecycle status, derived from emitted events.",
-      "oneOf": [
-        {
-          "description": "Agent is waiting for initialization.",
-          "type": "string",
-          "enum": [
-            "pending_init"
-          ]
-        },
-        {
-          "description": "Agent is currently running.",
-          "type": "string",
-          "enum": [
-            "running"
-          ]
-        },
-        {
-          "description": "Agent is done. Contains the final assistant message.",
-          "type": "object",
-          "required": [
-            "completed"
-          ],
-          "properties": {
-            "completed": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "additionalProperties": false,
-          "title": "CompletedAgentStatus"
-        },
-        {
-          "description": "Agent encountered an error.",
-          "type": "object",
-          "required": [
-            "errored"
-          ],
-          "properties": {
-            "errored": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "title": "ErroredAgentStatus"
-        },
-        {
-          "description": "Agent has been shutdown.",
-          "type": "string",
-          "enum": [
-            "shutdown"
-          ]
-        },
-        {
-          "description": "Agent is not found.",
-          "type": "string",
-          "enum": [
-            "not_found"
-          ]
-        }
-      ]
     },
     "ClientRequest": {
       "$schema": "http://json-schema.org/draft-07/schema#",

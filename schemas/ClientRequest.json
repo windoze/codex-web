@@ -3446,9 +3446,6 @@
             "null"
           ]
         },
-        "threadId": {
-          "type": "string"
-        },
         "serviceTier": {
           "anyOf": [
             {
@@ -3465,6 +3462,9 @@
               "type": "null"
             }
           ]
+        },
+        "threadId": {
+          "type": "string"
         },
         "sandbox": {
           "anyOf": [
@@ -3848,17 +3848,10 @@
             "null"
           ]
         },
-        "serviceTier": {
+        "sandbox": {
           "anyOf": [
             {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/ServiceTier"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "$ref": "#/definitions/SandboxMode"
             },
             {
               "type": "null"
@@ -3881,10 +3874,17 @@
         "threadId": {
           "type": "string"
         },
-        "sandbox": {
+        "serviceTier": {
           "anyOf": [
             {
-              "$ref": "#/definitions/SandboxMode"
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ServiceTier"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             {
               "type": "null"

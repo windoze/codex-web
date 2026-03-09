@@ -6588,65 +6588,63 @@
         "incomplete"
       ]
     },
-    "MacOsAutomationValue": {
-      "anyOf": [
+    "MacOsAutomationPermission": {
+      "oneOf": [
         {
-          "type": "boolean"
+          "type": "string",
+          "enum": [
+            "none",
+            "all"
+          ]
         },
         {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "object",
+          "required": [
+            "bundle_ids"
+          ],
+          "properties": {
+            "bundle_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "title": "BundleIdsMacOsAutomationPermission"
         }
       ]
     },
-    "MacOsPermissions": {
+    "MacOsPreferencesPermission": {
+      "type": "string",
+      "enum": [
+        "none",
+        "read_only",
+        "read_write"
+      ]
+    },
+    "MacOsSeatbeltProfileExtensions": {
       "type": "object",
+      "required": [
+        "macos_accessibility",
+        "macos_automation",
+        "macos_calendar",
+        "macos_preferences"
+      ],
       "properties": {
-        "accessibility": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "macos_accessibility": {
+          "type": "boolean"
         },
-        "automations": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsAutomationValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "macos_automation": {
+          "$ref": "#/definitions/MacOsAutomationPermission"
         },
-        "calendar": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "macos_calendar": {
+          "type": "boolean"
         },
-        "preferences": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/MacOsPreferencesValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "macos_preferences": {
+          "$ref": "#/definitions/MacOsPreferencesPermission"
         }
       }
-    },
-    "MacOsPreferencesValue": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "string"
-        }
-      ]
     },
     "McpAuthStatus": {
       "type": "string",
@@ -6992,7 +6990,7 @@
         "macos": {
           "anyOf": [
             {
-              "$ref": "#/definitions/MacOsPermissions"
+              "$ref": "#/definitions/MacOsSeatbeltProfileExtensions"
             },
             {
               "type": "null"
