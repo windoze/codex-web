@@ -45,7 +45,10 @@ async fn interaction_can_be_resolved_via_api() {
         AppState {
             db,
             event_tx,
-            runners: codex_web::runners::RunnerSet::new(codex),
+            runners: codex_web::runners::RunnerSet::new(
+                codex,
+                codex_web::claude::ClaudeRuntime::stub(vec![]),
+            ),
             ws_clients,
             auth_token: None,
             interaction_timeout_ms: 5_000,

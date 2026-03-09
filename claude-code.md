@@ -1,6 +1,6 @@
 # Claude Code support (plan)
 
-Status: **phases 1–2 implemented** (tool persisted; generalized session storage; runner abstraction). Claude runner + UI work pending.
+Status: **phases 1–3 implemented** (tool persisted; generalized session storage; runner abstraction; Claude runner MVP). UI work pending.
 
 This document describes how to add **Claude Code** (referred to as `claude-code`) as an alternative
 execution backend alongside **Codex CLI** in `codex-web`.
@@ -71,6 +71,27 @@ If Claude Code does not provide JSON output or a stable programmatic prompt/resp
 we should implement one of these fallbacks:
 1) A small “bridge” wrapper that translates Claude Code into a JSONL event stream, or
 2) Limit Claude Code support to “best-effort transcript capture” without interactive approvals (not recommended).
+
+### 3.4 Implemented contract (current MVP)
+The current Claude runner is implemented against a **bridge-style** contract (it may work with a native CLI
+if it happens to match the same shape).
+
+Execution command (from the daemon, `cwd = project_root`):
+- `claude-code exec --json <PROMPT>`
+- `claude-code exec resume <SESSION_ID> --json <PROMPT>` (when `tool_session_id` is present)
+
+Stdout is expected to be **JSONL**, where each line is a JSON object. codex-web persists each JSON object
+as a raw `claude_event` conversation event, and derives an `agent_message` at the end of the turn.
+
+Recognized JSON event shapes (minimal):
+- `{ "type": "session_configured", "session_id": "..." }`
+- `{ "type": "assistant_message_delta", "delta": "..." }`
+- `{ "type": "assistant_message_completed", "text": "..." }` (optional)
+- `{ "type": "interaction_request", "kind": "...", "prompt": "..." }`
+
+Interaction responses are written back to the tool’s stdin using a simple terminal-style protocol:
+- Accept/decline → `y\\n` / `n\\n`
+- Text input (kind `claude.input`) → `<text>\\n`
 
 ---
 
@@ -252,8 +273,8 @@ Then:
 
 ### 7.4 Tool configuration
 Add config/env vars for locating and controlling Claude Code:
-- `CODEX_WEB_CLAUDE_CODE_BIN` (default: `claude-code`)
-- `CODEX_WEB_CLAUDE_CODE_ARGS` (optional additional args)
+- ✅ `CODEX_WEB_CLAUDE_CODE_BIN` (default: `claude-code`)
+- ✅ `CODEX_WEB_CLAUDE_CODE_ARGS` (optional additional args; whitespace-delimited)
 - Optionally a “disable Claude” flag if the binary is missing.
 
 ---
@@ -318,10 +339,11 @@ Plan:
 
 ### Phase 3: ClaudeRunner MVP
 - Implement `ClaudeRunner` to:
-  - run a turn
-  - stream assistant output into `agent_message` events
-  - persist raw `claude_event` protocol events (if available)
-  - create interaction requests and resume after responses
+  - ✅ run a turn
+  - ✅ stream assistant output (raw `claude_event` deltas; final `agent_message`)
+  - ✅ persist raw `claude_event` protocol events (if available)
+  - ✅ create interaction requests and resume after responses
+  - (See “Implemented contract” above for the current JSONL contract.)
 
 ### Phase 4: UI/UX changes
 - Add assistant selector to the New Conversation modal.
@@ -346,7 +368,7 @@ Plan:
 - [x] `GET /api/conversations` returns tool per conversation.
 - [x] Existing conversations without tool data behave as `codex`.
 - [x] Runs remain non-reentrant per conversation.
-- [ ] Claude interactions appear in `/api/interactions/pending` and can be answered from terminal.
+- [x] Claude interactions appear in `/api/interactions/pending` and can be answered from terminal.
 
 ### Frontend
 - [ ] “New conversation…” offers `codex` vs `claude-code`.

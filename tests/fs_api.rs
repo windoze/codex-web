@@ -16,7 +16,10 @@ async fn test_app(db_path: &Path) -> axum::Router {
         AppState {
             db,
             event_tx,
-            runners: codex_web::runners::RunnerSet::new(codex_web::codex::CodexRuntime::stub(vec![])),
+            runners: codex_web::runners::RunnerSet::new(
+                codex_web::codex::CodexRuntime::stub(vec![]),
+                codex_web::claude::ClaudeRuntime::stub(vec![]),
+            ),
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             auth_token: None,
             interaction_timeout_ms: 30_000,

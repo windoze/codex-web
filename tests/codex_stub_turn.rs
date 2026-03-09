@@ -30,7 +30,10 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
         AppState {
             db,
             event_tx,
-            runners: codex_web::runners::RunnerSet::new(codex),
+            runners: codex_web::runners::RunnerSet::new(
+                codex,
+                codex_web::claude::ClaudeRuntime::stub(vec![]),
+            ),
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             auth_token: None,
             interaction_timeout_ms: 30_000,

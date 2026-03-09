@@ -56,11 +56,15 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         sandbox: config.codex_sandbox.clone(),
         skip_git_repo_check: true,
     });
+    let claude = crate::claude::ClaudeRuntime::real(
+        config.claude_code_bin.clone(),
+        config.claude_code_args.clone(),
+    );
     let app = build_router(
         AppState {
             db,
             event_tx,
-            runners: crate::runners::RunnerSet::new(codex),
+            runners: crate::runners::RunnerSet::new(codex, claude),
             ws_clients,
             auth_token: config.auth_token.clone(),
             interaction_timeout_ms: config.interaction_timeout_ms,
@@ -299,7 +303,10 @@ mod tests {
             AppState {
                 db,
                 event_tx,
-                runners: crate::runners::RunnerSet::new(crate::codex::CodexRuntime::stub(vec![])),
+                runners: crate::runners::RunnerSet::new(
+                    crate::codex::CodexRuntime::stub(vec![]),
+                    crate::claude::ClaudeRuntime::stub(vec![]),
+                ),
                 ws_clients: Arc::new(AtomicUsize::new(0)),
                 auth_token: None,
                 interaction_timeout_ms: 30_000,

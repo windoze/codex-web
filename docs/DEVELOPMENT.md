@@ -66,6 +66,21 @@ Expected:
 - The server invokes the `codex` CLI in that project directory.
 - The UI receives `run_status` events and then an `agent_message` event.
 
+## Claude Code run verification (Milestone: Claude runner MVP)
+
+1. Ensure `claude-code` is available (or configure `CODEX_WEB_CLAUDE_CODE_BIN` to a wrapper that implements the JSONL contract).
+   - For a quick end-to-end smoke test without a real Claude binary, you can set
+     `CODEX_WEB_CLAUDE_CODE_BIN=./scripts/claude-code-bridge-demo.sh`.
+2. Start the daemon and UI.
+3. Create a conversation with `tool = claude-code`.
+   - Note: if the UI doesn’t expose a tool selector yet, create it via `POST /api/conversations` (see `docs/API.md`).
+4. Send a message.
+
+Expected:
+- The server invokes `claude-code exec ... --json` in that project directory.
+- The UI receives `run_status` events and then an `agent_message` event.
+- Raw tool output is persisted as `claude_event` events.
+
 ## Codex protocol schemas
 
 codex-web parses `codex exec --json` output into schema-typed Rust structs/enums generated from the JSON schemas in `schemas/`.

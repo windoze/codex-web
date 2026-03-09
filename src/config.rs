@@ -71,6 +71,20 @@ pub struct ServeArgs {
     )]
     pub codex_sandbox: String,
 
+    /// Claude Code binary to execute (or a bridge wrapper that implements the JSONL contract)
+    #[arg(
+        long,
+        env = "CODEX_WEB_CLAUDE_CODE_BIN",
+        default_value = "claude-code"
+    )]
+    pub claude_code_bin: String,
+
+    /// Additional arguments passed to the Claude Code binary.
+    ///
+    /// This is a simple whitespace-delimited list (no shell parsing/quoting).
+    #[arg(long, env = "CODEX_WEB_CLAUDE_CODE_ARGS", value_delimiter = ' ')]
+    pub claude_code_args: Vec<String>,
+
     /// Maximum number of Codex turns to run concurrently across all conversations
     #[arg(long, env = "CODEX_WEB_MAX_CONCURRENT_RUNS", default_value_t = 2)]
     pub max_concurrent_runs: usize,
@@ -138,6 +152,8 @@ pub struct Config {
     pub interaction_default_action: String,
     pub codex_ask_for_approval: String,
     pub codex_sandbox: String,
+    pub claude_code_bin: String,
+    pub claude_code_args: Vec<String>,
     pub max_concurrent_runs: usize,
     pub on_turn_finished_command: Option<String>,
 }
@@ -158,6 +174,8 @@ impl Config {
             interaction_default_action: args.interaction_default_action,
             codex_ask_for_approval: args.codex_ask_for_approval,
             codex_sandbox: args.codex_sandbox,
+            claude_code_bin: args.claude_code_bin,
+            claude_code_args: args.claude_code_args,
             max_concurrent_runs: args.max_concurrent_runs,
             on_turn_finished_command: args
                 .on_turn_finished_command

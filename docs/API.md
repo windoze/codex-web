@@ -63,12 +63,15 @@ Interaction requests represent “blocking” prompts (e.g., approvals) that can
   - Response: `ConversationEvent` (type = `user_message`)
   - Side effects:
     - Marks the conversation run as `running` (non-reentrant; concurrent sends return `409`)
-    - Spawns a Codex turn via `codex exec --json` / `codex exec resume <SESSION_ID> --json`
-      - Note: the conversation `tool` field exists for multi-backend support, but only `codex` execution is implemented today.
+    - Spawns a per-turn assistant run based on `conversation.tool`:
+      - `codex`: `codex exec --json` / `codex exec resume <SESSION_ID> --json`
+      - `claude-code`: `claude-code exec --json` / `claude-code exec resume <SESSION_ID> --json`
+        - The Claude runner expects JSONL on stdout (either native or via a small wrapper/bridge).
     - Emits additional conversation events:
       - `run_status` (`running` → `completed` / `failed`)
-      - `codex_event` (raw Codex JSONL)
-      - `agent_message` (derived from Codex `item_completed` events where `item.type = AgentMessage`)
+      - `codex_event` (raw Codex JSONL; only when `conversation.tool = codex`)
+      - `claude_event` (raw Claude Code/bridge JSONL; only when `conversation.tool = claude-code`)
+      - `agent_message` (derived assistant output)
 
 ## WebSocket
 

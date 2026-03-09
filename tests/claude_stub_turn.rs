@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
@@ -7,46 +5,31 @@ use tower::ServiceExt;
 use codex_web::server::{AppState, build_router};
 
 #[tokio::test]
-async fn runs_configured_on_turn_finished_command() {
+async fn posting_message_runs_claude_stub_and_persists_events() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let db_path = temp_dir.path().join("turn_finished_hook.sqlite3");
+    let db_path = temp_dir.path().join("claude_stub.sqlite3");
     let db = codex_web::db::Db::connect(&db_path)
         .await
         .expect("db connect");
     let (event_tx, _rx) = tokio::sync::broadcast::channel(128);
 
-    // A deterministic stub turn that completes successfully.
-    let codex = codex_web::codex::CodexRuntime::stub(vec![serde_json::json!({
-        "type": "item_completed",
-        "thread_id": "00000000-0000-0000-0000-000000000001",
-        "turn_id": "turn_0",
-        "item": {
-            "type": "AgentMessage",
-            "id": "item_0",
-            "content": [
-                { "type": "Text", "text": "hello" }
-            ]
-        }
-    })]);
-
-    // Writes the final run status to a file in the project root.
-    let hook_path = "turn_finished_hook.txt";
-    let hook_cmd = format!("printf \"%s\" \"$CODEX_WEB_RUN_STATUS\" > {hook_path}");
+    let codex = codex_web::codex::CodexRuntime::stub(vec![]);
+    let claude = codex_web::claude::ClaudeRuntime::stub(vec![
+        serde_json::json!({ "type": "session_configured", "session_id": "sess_1" }),
+        serde_json::json!({ "type": "assistant_message_delta", "delta": "hello from claude stub" }),
+    ]);
 
     let app = build_router(
         AppState {
             db,
             event_tx,
-            runners: codex_web::runners::RunnerSet::new(
-                codex,
-                codex_web::claude::ClaudeRuntime::stub(vec![]),
-            ),
+            runners: codex_web::runners::RunnerSet::new(codex, claude),
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             auth_token: None,
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
-            on_turn_finished_command: Some(hook_cmd),
+            on_turn_finished_command: None,
         },
         None,
     );
@@ -71,7 +54,7 @@ async fn runs_configured_on_turn_finished_command() {
     let project: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let project_id = project.get("id").unwrap().as_str().unwrap().to_string();
 
-    // Create conversation
+    // Create conversation with tool = claude-code
     let req = Request::builder()
         .method("POST")
         .uri("/api/conversations")
@@ -79,7 +62,8 @@ async fn runs_configured_on_turn_finished_command() {
         .body(Body::from(
             serde_json::json!({
                 "project_id": project_id,
-                "title": "Hook Conversation"
+                "title": "Claude Stub Conversation",
+                "tool": "claude-code"
             })
             .to_string(),
         ))
@@ -97,7 +81,7 @@ async fn runs_configured_on_turn_finished_command() {
         .unwrap()
         .to_string();
 
-    // Post message (triggers background stub turn + hook).
+    // Post message (triggers background claude stub turn).
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/conversations/{conversation_id}/messages"))
@@ -107,19 +91,56 @@ async fn runs_configured_on_turn_finished_command() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Wait for the hook file to appear and be populated.
-    let target = temp_dir.path().join(hook_path);
-    let mut contents = None;
-    for _ in 0..100 {
-        if let Ok(text) = std::fs::read_to_string(&target)
-            && !text.trim().is_empty()
-        {
-            contents = Some(text);
+    // Poll events until we see both the raw claude_event and the derived agent_message.
+    let mut saw_agent = false;
+    let mut saw_raw = false;
+    for _ in 0..25 {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/api/conversations/{conversation_id}/events?after=0&limit=200"
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+        saw_agent |= events
+            .iter()
+            .any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("agent_message"));
+        saw_raw |= events
+            .iter()
+            .any(|e| e.get("event_type").and_then(|v| v.as_str()) == Some("claude_event"));
+
+        if saw_agent && saw_raw {
             break;
         }
+
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
+    assert!(saw_raw, "expected claude_event to be persisted");
+    assert!(saw_agent, "expected agent_message to be persisted");
 
-    let contents = contents.expect("expected hook command to write output file");
-    assert_eq!(contents.trim(), "completed");
+    // Ensure the run recorded the session id returned by the tool.
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/conversations/{conversation_id}"))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let convo_with_run: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let session_id = convo_with_run
+        .get("run")
+        .and_then(|r| r.get("tool_session_id"))
+        .and_then(|v| v.as_str());
+    assert_eq!(session_id, Some("sess_1"));
 }
+

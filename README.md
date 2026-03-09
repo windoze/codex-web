@@ -1,18 +1,21 @@
 # codex-web
 
-Local daemon + web UI for managing **persistent Codex conversations** across multiple projects.
+Local daemon + web UI for managing **persistent assistant conversations** (Codex CLI and Claude Code) across multiple projects.
 
 The core idea is simple:
 - The daemon persists an **append-only event log** per conversation (SQLite).
 - The web UI is stateless: it reconnects and “catches up” from the event log.
-- Codex execution is **per-turn** using `codex exec --json` and `codex exec resume <SESSION_ID> --json`.
+- Assistant execution is **per-turn**:
+  - Codex: `codex exec --json` and `codex exec resume <SESSION_ID> --json`
+  - Claude Code: `claude-code exec --json` and `claude-code exec resume <SESSION_ID> --json` (native or via a small wrapper/bridge)
 
-See `PLAN.md` for the implementation roadmap and milestone status.
+See `PLAN.md` for the overall roadmap, and `claude-code.md` for Claude Code integration details.
 
 ## Requirements
 
 - Rust toolchain (edition 2024)
-- `codex` CLI available in `PATH` (required for assistant responses)
+- `codex` CLI available in `PATH` (required for Codex conversations)
+- `claude-code` available in `PATH` (optional; required for Claude Code conversations)
 
 Frontend requirements (added in later milestones):
 - Node.js + npm
@@ -105,6 +108,8 @@ The daemon can be configured via CLI flags or environment variables:
 - `CODEX_WEB_INTERACTION_DEFAULT_ACTION` (default `decline`)
 - `CODEX_WEB_CODEX_APPROVAL_POLICY` (default `never`)
 - `CODEX_WEB_CODEX_SANDBOX` (default `workspace-write`)
+- `CODEX_WEB_CLAUDE_CODE_BIN` (default `claude-code`)
+- `CODEX_WEB_CLAUDE_CODE_ARGS` (optional whitespace-delimited extra args)
 - `CODEX_WEB_MAX_CONCURRENT_RUNS` (default `2`)
 - `CODEX_WEB_ON_TURN_FINISHED_COMMAND` (optional; run a shell command when a turn finishes; `cwd` = project root)
 - `RUST_LOG` (default `codex_web=info,tower_http=info`)

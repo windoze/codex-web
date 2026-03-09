@@ -46,10 +46,15 @@ pub struct RunnerSet {
 }
 
 impl RunnerSet {
-    pub fn new(codex_runtime: crate::codex::CodexRuntime) -> Self {
+    pub fn new(
+        codex_runtime: crate::codex::CodexRuntime,
+        claude_runtime: crate::claude::ClaudeRuntime,
+    ) -> Self {
         Self {
             codex: Arc::new(codex::CodexRunner { runtime: codex_runtime }),
-            claude: Arc::new(claude::ClaudeRunner {}),
+            claude: Arc::new(claude::ClaudeRunner {
+                runtime: claude_runtime,
+            }),
         }
     }
 
@@ -60,4 +65,3 @@ impl RunnerSet {
         }
     }
 }
-
