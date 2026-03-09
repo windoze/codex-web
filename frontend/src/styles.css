@@ -26,10 +26,6 @@ body {
   border-bottom: 1px solid rgba(127, 127, 127, 0.25);
 }
 
-.loginLogout {
-  margin-top: 10px;
-}
-
 .brand {
   font-weight: 700;
   font-size: 16px;
@@ -152,6 +148,19 @@ body {
   padding: 7px 10px;
   border-radius: 10px;
   font-size: 12px;
+}
+
+.iconButton {
+  padding: 8px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .button:disabled {

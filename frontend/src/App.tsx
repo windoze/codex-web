@@ -1085,11 +1085,6 @@ export default function App() {
         <div className="sidebarHeader">
           <div className="brand">codex-web</div>
           <div className="muted">API: {apiBase()}</div>
-          {authToken ? (
-            <button className="button buttonSmall loginLogout" type="button" onClick={onLogout}>
-              Log out
-            </button>
-          ) : null}
         </div>
 
         <button className="newConversationRow" type="button" onClick={() => openNewConversationDialog()}>
@@ -1163,6 +1158,27 @@ export default function App() {
                   Export
                 </a>
               </>
+            ) : null}
+            {authToken ? (
+              <button
+                className="button iconButton"
+                type="button"
+                onClick={onLogout}
+                aria-label="Log out"
+                title="Log out"
+              >
+                <svg viewBox="0 0 24 24" className="icon" aria-hidden="true">
+                  <path
+                    d="M10 17l1.4-1.4L8.8 13H20v-2H8.8l2.6-2.6L10 7l-7 7 7 7z"
+                    fill="currentColor"
+                  />
+                  <path
+                    d="M4 4h8v2H6v12h6v2H4V4z"
+                    fill="currentColor"
+                    opacity="0.85"
+                  />
+                </svg>
+              </button>
             ) : null}
           </div>
         </div>
