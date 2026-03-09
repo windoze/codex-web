@@ -784,6 +784,8 @@ body {
     bottom: 0;
     width: min(340px, 88vw);
     z-index: 901;
+    background: rgba(255, 255, 255, 0.98);
+    color: rgba(0, 0, 0, 0.92);
     background: Canvas;
     color: CanvasText;
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
@@ -831,6 +833,15 @@ body {
 
   .modalBody {
     padding: 12px;
+  }
+}
+
+@media (max-width: 820px) and (prefers-color-scheme: dark) {
+  .sidebar {
+    background: rgba(24, 24, 24, 0.98);
+    color: rgba(255, 255, 255, 0.92);
+    background: Canvas;
+    color: CanvasText;
   }
 }
 
