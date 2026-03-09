@@ -888,6 +888,7 @@ export default function App() {
   }
 
   async function openNewConversationDialog() {
+    setSidebarOpen(false);
     setNewConversationOpen(true);
     setPickerError(null);
     setNewConversationTitle("");
