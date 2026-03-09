@@ -17,7 +17,7 @@ async fn api_requires_bearer_token_when_configured() {
         AppState {
             db,
             event_tx,
-            codex: codex_web::codex::CodexRuntime::stub(vec![]),
+            runners: codex_web::runners::RunnerSet::new(codex_web::codex::CodexRuntime::stub(vec![])),
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             auth_token: Some("secret".to_string()),
             interaction_timeout_ms: 30_000,

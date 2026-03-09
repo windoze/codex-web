@@ -1,6 +1,6 @@
 # Claude Code support (plan)
 
-Status: **phase 1 implemented** (tool persisted; generalized session storage). Runner + UI work pending.
+Status: **phases 1–2 implemented** (tool persisted; generalized session storage; runner abstraction). Claude runner + UI work pending.
 
 This document describes how to add **Claude Code** (referred to as `claude-code`) as an alternative
 execution backend alongside **Codex CLI** in `codex-web`.
@@ -313,8 +313,8 @@ Plan:
 - ✅ Surface tool in `GET /api/conversations` list items.
 
 ### Phase 2: Runner abstraction
-- Refactor current Codex execution into `CodexRunner` behind a common interface.
-- Add stubs for `ClaudeRunner` returning a clear “not yet supported” error (optional intermediate step).
+- ✅ Refactor current Codex execution into `CodexRunner` behind a common interface.
+- ✅ Add a `ClaudeRunner` stub that returns a clear “not yet supported” error.
 
 ### Phase 3: ClaudeRunner MVP
 - Implement `ClaudeRunner` to:

@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::tool::ToolKind;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Db {
     pool: SqlitePool,
 }

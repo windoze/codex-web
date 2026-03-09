@@ -37,7 +37,7 @@ async fn runs_configured_on_turn_finished_command() {
         AppState {
             db,
             event_tx,
-            codex,
+            runners: codex_web::runners::RunnerSet::new(codex),
             ws_clients: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             auth_token: None,
             interaction_timeout_ms: 30_000,

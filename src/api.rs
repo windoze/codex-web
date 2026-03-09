@@ -525,10 +525,11 @@ async fn post_user_message(
         .await
         .map_err(ApiError::internal)?;
 
+    let runner = state.runners.for_tool(conversation.tool);
     let ctx = crate::orchestrator::TurnContext {
         db: state.db.clone(),
         event_tx: state.event_tx.clone(),
-        codex: state.codex.clone(),
+        runner,
         conversation_id,
         project_root: PathBuf::from(project.root_path),
         tool_session_id: run.tool_session_id,

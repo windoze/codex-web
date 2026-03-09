@@ -35,7 +35,7 @@ struct BundledUiAssets;
 pub struct AppState {
     pub db: Db,
     pub event_tx: broadcast::Sender<crate::db::ConversationEvent>,
-    pub codex: crate::codex::CodexRuntime,
+    pub runners: crate::runners::RunnerSet,
     pub ws_clients: Arc<AtomicUsize>,
     pub auth_token: Option<String>,
     pub interaction_timeout_ms: i64,
@@ -51,15 +51,16 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let (event_tx, _rx) = broadcast::channel(1024);
     let ws_clients = Arc::new(AtomicUsize::new(0));
     let run_semaphore = Arc::new(Semaphore::new(config.max_concurrent_runs.max(1)));
+    let codex = crate::codex::CodexRuntime::Real(crate::codex::CodexReal {
+        ask_for_approval: config.codex_ask_for_approval.clone(),
+        sandbox: config.codex_sandbox.clone(),
+        skip_git_repo_check: true,
+    });
     let app = build_router(
         AppState {
             db,
             event_tx,
-            codex: crate::codex::CodexRuntime::Real(crate::codex::CodexReal {
-                ask_for_approval: config.codex_ask_for_approval.clone(),
-                sandbox: config.codex_sandbox.clone(),
-                skip_git_repo_check: true,
-            }),
+            runners: crate::runners::RunnerSet::new(codex),
             ws_clients,
             auth_token: config.auth_token.clone(),
             interaction_timeout_ms: config.interaction_timeout_ms,
@@ -298,7 +299,7 @@ mod tests {
             AppState {
                 db,
                 event_tx,
-                codex: crate::codex::CodexRuntime::stub(vec![]),
+                runners: crate::runners::RunnerSet::new(crate::codex::CodexRuntime::stub(vec![])),
                 ws_clients: Arc::new(AtomicUsize::new(0)),
                 auth_token: None,
                 interaction_timeout_ms: 30_000,
