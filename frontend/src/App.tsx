@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import openaiSvg from "./assets/openai.svg?raw";
+import claudeSvg from "./assets/claude-color.svg?raw";
 import {
   Conversation,
   ConversationListItem,
@@ -66,16 +68,17 @@ function toolLabel(tool: ConversationTool): string {
   return tool === "codex" ? "Codex" : "Claude Code";
 }
 
-function toolShortLabel(tool: ConversationTool): string {
-  return tool === "codex" ? "CX" : "CL";
-}
-
 function ToolBadge({ tool }: { tool: ConversationTool }) {
   const cls = tool === "codex" ? "toolBadge toolBadgeCodex" : "toolBadge toolBadgeClaude";
   const label = toolLabel(tool);
   return (
     <span className={cls} aria-label={`Uses ${label}`} title={`Uses ${label}`}>
-      {toolShortLabel(tool)}
+      <span
+        className="toolBadgeIcon"
+        aria-hidden="true"
+        // These SVGs are local, versioned assets (not user-provided), so rendering them inline is safe.
+        dangerouslySetInnerHTML={{ __html: tool === "codex" ? openaiSvg : claudeSvg }}
+      />
     </span>
   );
 }
