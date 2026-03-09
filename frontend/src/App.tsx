@@ -45,7 +45,9 @@ export function bubblePreviewText(text: string): string {
   return `${firstLine} …`;
 }
 
-export function bubbleStartsExpanded(item: Pick<ChatItem, "kind">): boolean {
+export function bubbleStartsExpanded(item: Pick<ChatItem, "kind" | "role">): boolean {
+  // User messages should remain visible by default (they are the prompt/context).
+  if (item.role === "user") return true;
   return item.kind === "agent_message";
 }
 

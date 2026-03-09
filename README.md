@@ -50,7 +50,7 @@ VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 In the UI, click “New conversation…” to pick a project directory (the picker starts at your home directory).
 
 UI tips:
-- Message bubbles are collapsible. Non-`agent_message` bubbles start collapsed; click the triangle to expand/collapse.
+- Message bubbles are collapsible. `agent_message` and user bubbles start expanded; other bubbles start collapsed. Click the triangle to expand/collapse.
 
 ## Single-binary UI (bundled assets)
 

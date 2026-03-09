@@ -213,9 +213,10 @@ describe("ui helpers", () => {
     expect(bubblePreviewText("\nworld")).toBe("…");
   });
 
-  it("expands agent_message bubbles by default and collapses others", () => {
-    expect(bubbleStartsExpanded({ kind: "agent_message" })).toBe(true);
-    expect(bubbleStartsExpanded({ kind: undefined })).toBe(false);
+  it("expands user bubbles and agent_message bubbles by default", () => {
+    expect(bubbleStartsExpanded({ role: "user", kind: undefined })).toBe(true);
+    expect(bubbleStartsExpanded({ role: "assistant", kind: "agent_message" })).toBe(true);
+    expect(bubbleStartsExpanded({ role: "assistant", kind: undefined })).toBe(false);
   });
 
   it("updates list run_status so spinners can show even when not selected", () => {
