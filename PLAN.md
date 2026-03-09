@@ -318,6 +318,7 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Show Start/Stop splitters in local time
 - [x] Replace sidebar auth input with startup login screen when auth is required
 - [x] Move logout icon to top-right header
+- [x] Make layout mobile responsive (sidebar drawer)
 - [x] Render run_status as Start/Stop splitters; hide raw run_status unless raw enabled
 - [x] Style agent_message bubbles with thicker border
 - [x] Show token usage in chat header from turn.completed usage

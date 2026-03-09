@@ -564,6 +564,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [pendingInteractions, setPendingInteractions] = useState<InteractionRequest[]>([]);
   const [showRawMessages, setShowRawMessages] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -839,6 +840,11 @@ export default function App() {
     return projectsById.get(c.project_id) ?? null;
   }
 
+  function onSelectConversation(conversationId: string) {
+    setActiveConversationId(conversationId);
+    setSidebarOpen(false);
+  }
+
   async function loadPickerPath(path: string) {
     setPickerError(null);
     setPickerLoading(true);
@@ -1080,11 +1086,34 @@ export default function App() {
   }
 
   return (
-    <div className="layout">
+    <div className={sidebarOpen ? "layout sidebarOpen" : "layout"}>
+      {sidebarOpen ? (
+        <button
+          className="sidebarBackdrop"
+          type="button"
+          aria-label="Close sidebar"
+          title="Close sidebar"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
       <aside className="sidebar">
         <div className="sidebarHeader">
           <div className="brand">codex-web</div>
           <div className="muted">API: {apiBase()}</div>
+          <button
+            className="button iconButton sidebarCloseButton"
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
+            title="Close sidebar"
+          >
+            <svg viewBox="0 0 24 24" className="icon" aria-hidden="true">
+              <path
+                d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7a1 1 0 1 0-1.4 1.4l4.9 4.9-4.9 4.9a1 1 0 1 0 1.4 1.4l4.9-4.9 4.9 4.9a1 1 0 0 0 1.4-1.4l-4.9-4.9 4.9-4.9a1 1 0 0 0 0-1.4z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
         </div>
 
         <button className="newConversationRow" type="button" onClick={() => openNewConversationDialog()}>
@@ -1096,7 +1125,7 @@ export default function App() {
             <button
               key={c.id}
               className={c.id === activeConversationId ? "conversation active" : "conversation"}
-              onClick={() => setActiveConversationId(c.id)}
+              onClick={() => onSelectConversation(c.id)}
               type="button"
             >
               <div className="conversationTopRow">
@@ -1120,17 +1149,33 @@ export default function App() {
 
       <main className="chat">
         <div className="chatHeader">
-          <div className="chatTitle">
-            {activeConversation
-              ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
-              : "No conversation"}
-            {tokenUsage ? (
-              <span className="tokenUsage">
-                ({tokenUsage.cached_input_tokens} cached tokens, {tokenUsage.input_tokens} input tokens,{" "}
-                {tokenUsage.output_tokens} output tokens)
-              </span>
-            ) : null}
-            {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
+          <div className="chatHeaderLeft">
+            <button
+              className="button iconButton menuButton"
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open conversations"
+              title="Open conversations"
+            >
+              <svg viewBox="0 0 24 24" className="icon" aria-hidden="true">
+                <path
+                  d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+            <div className="chatTitle">
+              {activeConversation
+                ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
+                : "No conversation"}
+              {tokenUsage ? (
+                <span className="tokenUsage">
+                  ({tokenUsage.cached_input_tokens} cached tokens, {tokenUsage.input_tokens} input tokens,{" "}
+                  {tokenUsage.output_tokens} output tokens)
+                </span>
+              ) : null}
+              {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
+            </div>
           </div>
           <div className="chatActions">
             <label className="toggle">
