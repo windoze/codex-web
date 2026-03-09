@@ -784,7 +784,9 @@ body {
     bottom: 0;
     width: min(340px, 88vw);
     z-index: 901;
-    background: rgba(127, 127, 127, 0.08);
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
     transform: translateX(-110%);
     transition: transform 160ms ease;
   }
