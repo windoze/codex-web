@@ -127,7 +127,7 @@ async fn interaction_can_be_resolved_via_api() {
             .unwrap();
         let pending: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
         if let Some(id) = pending
-            .get(0)
+            .first()
             .and_then(|v| v.get("id"))
             .and_then(|v| v.as_str())
         {

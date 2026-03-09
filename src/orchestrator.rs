@@ -1,13 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::sync::broadcast;
 use tokio::sync::Semaphore;
+use tokio::sync::broadcast;
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -203,7 +203,9 @@ async fn emit(
     event_type: &str,
     payload: &Value,
 ) -> anyhow::Result<ConversationEvent> {
-    let e = db.append_event(conversation_id, event_type, payload).await?;
+    let e = db
+        .append_event(conversation_id, event_type, payload)
+        .await?;
     let _ = tx.send(e.clone());
     Ok(e)
 }
@@ -222,7 +224,7 @@ fn run_status_str(status: RunStatus) -> &'static str {
 
 fn spawn_turn_finished_hook(
     command: Option<&str>,
-    project_root: &PathBuf,
+    project_root: &Path,
     conversation_id: Uuid,
     status: RunStatus,
     codex_session_id: Option<&str>,
@@ -232,7 +234,7 @@ fn spawn_turn_finished_hook(
     };
 
     let command = command.to_string();
-    let cwd = project_root.clone();
+    let cwd = project_root.to_path_buf();
     let conversation_id = conversation_id.to_string();
     let status_str = run_status_str(status).to_string();
     let session_id = codex_session_id.unwrap_or("").to_string();
@@ -250,10 +252,7 @@ fn spawn_turn_finished_hook(
 
         cmd.current_dir(&cwd);
         cmd.env("CODEX_WEB_CONVERSATION_ID", &conversation_id);
-        cmd.env(
-            "CODEX_WEB_PROJECT_ROOT",
-            cwd.to_string_lossy().to_string(),
-        );
+        cmd.env("CODEX_WEB_PROJECT_ROOT", cwd.to_string_lossy().to_string());
         cmd.env("CODEX_WEB_RUN_STATUS", &status_str);
         cmd.env("CODEX_WEB_CODEX_SESSION_ID", &session_id);
         cmd.stdin(Stdio::null());
@@ -350,7 +349,15 @@ async fn handle_interaction_if_needed(
 
     let user_present = ws_clients.load(Ordering::Relaxed) > 0;
     if !user_present {
-        return auto_resolve_interaction(db, tx, conversation_id, request.id, &request.kind, default_action).await;
+        return auto_resolve_interaction(
+            db,
+            tx,
+            conversation_id,
+            request.id,
+            &request.kind,
+            default_action,
+        )
+        .await;
     }
 
     db.set_run_status(conversation_id, crate::db::RunStatus::WaitingForInteraction)
@@ -371,20 +378,20 @@ async fn handle_interaction_if_needed(
             break;
         }
 
-        if let Some(current) = db.get_interaction_request(request.id).await? {
-            if current.status == crate::db::InteractionStatus::Resolved {
-                db.set_run_status(conversation_id, crate::db::RunStatus::Running)
-                    .await?;
-                emit(
-                    db,
-                    tx,
-                    conversation_id,
-                    "run_status",
-                    &serde_json::json!({ "status": "running" }),
-                )
+        if let Some(current) = db.get_interaction_request(request.id).await?
+            && current.status == crate::db::InteractionStatus::Resolved
+        {
+            db.set_run_status(conversation_id, crate::db::RunStatus::Running)
                 .await?;
-                return Ok(response_to_stdin(&current.kind, current.response.as_ref()));
-            }
+            emit(
+                db,
+                tx,
+                conversation_id,
+                "run_status",
+                &serde_json::json!({ "status": "running" }),
+            )
+            .await?;
+            return Ok(response_to_stdin(&current.kind, current.response.as_ref()));
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -401,7 +408,15 @@ async fn handle_interaction_if_needed(
     )
     .await?;
 
-    auto_resolve_interaction(db, tx, conversation_id, request.id, &request.kind, default_action).await
+    auto_resolve_interaction(
+        db,
+        tx,
+        conversation_id,
+        request.id,
+        &request.kind,
+        default_action,
+    )
+    .await
 }
 
 async fn auto_resolve_interaction(
@@ -472,20 +487,18 @@ mod tests {
         db.try_mark_run_running(convo.id).await?;
 
         let (event_tx, mut event_rx) = broadcast::channel(32);
-        let stub_events = vec![
-            serde_json::json!({
-                "type": "item_completed",
-                "thread_id": "00000000-0000-0000-0000-000000000001",
-                "turn_id": "turn_0",
-                "item": {
-                    "type": "AgentMessage",
-                    "id": "item_0",
-                    "content": [
-                        { "type": "Text", "text": "hello" }
-                    ]
-                }
-            }),
-        ];
+        let stub_events = vec![serde_json::json!({
+            "type": "item_completed",
+            "thread_id": "00000000-0000-0000-0000-000000000001",
+            "turn_id": "turn_0",
+            "item": {
+                "type": "AgentMessage",
+                "id": "item_0",
+                "content": [
+                    { "type": "Text", "text": "hello" }
+                ]
+            }
+        })];
 
         run_turn(TurnContext {
             db: db.clone(),
@@ -506,7 +519,9 @@ mod tests {
         // We should see at least one agent_message event broadcast.
         let mut saw_agent = false;
         for _ in 0..10 {
-            if let Ok(e) = tokio::time::timeout(std::time::Duration::from_millis(200), event_rx.recv()).await {
+            if let Ok(e) =
+                tokio::time::timeout(std::time::Duration::from_millis(200), event_rx.recv()).await
+            {
                 let e = e?;
                 if e.event_type == "agent_message" {
                     saw_agent = true;
@@ -580,7 +595,11 @@ mod tests {
 
         let events = db.list_events_after(convo.id, 0, 1000).await?;
         assert!(events.iter().any(|e| e.event_type == "interaction_request"));
-        assert!(events.iter().any(|e| e.event_type == "interaction_response"));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.event_type == "interaction_response")
+        );
 
         Ok(())
     }

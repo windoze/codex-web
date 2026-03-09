@@ -39,6 +39,7 @@ pub struct CodexStub {
     pub exit_success: bool,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum CodexOutputLine {
     /// A JSON line that successfully parsed as a Codex protocol event.
@@ -106,8 +107,12 @@ where
     IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     match runtime {
-        CodexRuntime::Real(cfg) => run_real_with_input(cfg, invocation, &mut on_event, &mut on_input).await,
-        CodexRuntime::Stub(stub) => run_stub_with_input(stub, invocation, &mut on_event, &mut on_input).await,
+        CodexRuntime::Real(cfg) => {
+            run_real_with_input(cfg, invocation, &mut on_event, &mut on_input).await
+        }
+        CodexRuntime::Stub(stub) => {
+            run_stub_with_input(stub, invocation, &mut on_event, &mut on_input).await
+        }
     }
 }
 
@@ -124,25 +129,23 @@ where
     IFut: Future<Output = anyhow::Result<Option<String>>> + Send,
 {
     let mut session_id: Option<String> = None;
-    for e in stub.events.iter().cloned() {
+    for e in stub.events.iter() {
         let parsed: CodexOutputLine = match serde_json::from_value::<EventMsg>(e.clone()) {
             Ok(ev) => CodexOutputLine::Event(ev),
             Err(_) => CodexOutputLine::UnknownJson(e.clone()),
         };
 
-        if session_id.is_none() {
-            if let CodexOutputLine::Event(ev) = &parsed {
-                session_id = session_id_from_event(ev);
-            }
+        if session_id.is_none()
+            && let CodexOutputLine::Event(ev) = &parsed
+        {
+            session_id = session_id_from_event(ev);
         }
 
         let needs_input = matches!(parsed, CodexOutputLine::Event(ref ev) if stdin_needed(ev));
         on_event(parsed.clone()).await?;
 
-        if needs_input {
-            if let CodexOutputLine::Event(ev) = &parsed {
-                let _ = on_input(ev).await?;
-            }
+        if needs_input && let CodexOutputLine::Event(ev) = &parsed {
+            let _ = on_input(ev).await?;
         }
     }
     if !stub.exit_success {
@@ -214,26 +217,25 @@ where
             },
         };
 
-        if session_id_out.is_none() {
-            if let CodexOutputLine::Event(ev) = &parsed {
-                session_id_out = session_id_from_event(ev);
-            }
+        if session_id_out.is_none()
+            && let CodexOutputLine::Event(ev) = &parsed
+        {
+            session_id_out = session_id_from_event(ev);
         }
 
         let needs_input = matches!(parsed, CodexOutputLine::Event(ref ev) if stdin_needed(ev));
         on_event(parsed.clone()).await?;
 
-        if needs_input {
-            if let CodexOutputLine::Event(ev) = &parsed {
-                if let Some(input) = on_input(ev).await? {
-                    use tokio::io::AsyncWriteExt;
-                    stdin
-                        .write_all(input.as_bytes())
-                        .await
-                        .context("write codex stdin")?;
-                    stdin.flush().await.context("flush codex stdin")?;
-                }
-            }
+        if needs_input
+            && let CodexOutputLine::Event(ev) = &parsed
+            && let Some(input) = on_input(ev).await?
+        {
+            use tokio::io::AsyncWriteExt;
+            stdin
+                .write_all(input.as_bytes())
+                .await
+                .context("write codex stdin")?;
+            stdin.flush().await.context("flush codex stdin")?;
         }
     }
 
@@ -252,7 +254,9 @@ fn stdin_needed(event: &EventMsg) -> bool {
 
     matches!(
         event,
-        M::ExecApprovalRequest { .. } | M::ApplyPatchApprovalRequest { .. } | M::ElicitationRequest { .. }
+        M::ExecApprovalRequest { .. }
+            | M::ApplyPatchApprovalRequest { .. }
+            | M::ElicitationRequest { .. }
     )
 }
 

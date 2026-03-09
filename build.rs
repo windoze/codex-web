@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
@@ -62,7 +62,7 @@ fn main() {
     ensure_dist_exists(&dist_dir);
 }
 
-fn ensure_dist_exists(dist_dir: &PathBuf) {
+fn ensure_dist_exists(dist_dir: &Path) {
     let index = dist_dir.join("index.html");
     if !index.exists() {
         panic!(

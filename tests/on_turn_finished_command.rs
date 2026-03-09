@@ -108,11 +108,11 @@ async fn runs_configured_on_turn_finished_command() {
     let target = temp_dir.path().join(hook_path);
     let mut contents = None;
     for _ in 0..100 {
-        if let Ok(text) = std::fs::read_to_string(&target) {
-            if !text.trim().is_empty() {
-                contents = Some(text);
-                break;
-            }
+        if let Ok(text) = std::fs::read_to_string(&target)
+            && !text.trim().is_empty()
+        {
+            contents = Some(text);
+            break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
@@ -120,4 +120,3 @@ async fn runs_configured_on_turn_finished_command() {
     let contents = contents.expect("expected hook command to write output file");
     assert_eq!(contents.trim(), "completed");
 }
-
