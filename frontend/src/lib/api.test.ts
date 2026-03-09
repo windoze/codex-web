@@ -6,6 +6,20 @@ describe("apiBase / wsBase", () => {
     expect(apiBase()).toMatch(/^http:\/\//);
     expect(wsBase()).toMatch(/^ws:\/\//);
   });
+
+  it("uses current window origin when available", () => {
+    const prevWindow = (globalThis as unknown as { window?: unknown }).window;
+    (globalThis as unknown as { window?: unknown }).window = {
+      location: { origin: "https://example.test", hostname: "example.test", port: "" },
+    };
+
+    try {
+      expect(apiBase()).toBe("https://example.test");
+      expect(wsBase()).toBe("wss://example.test");
+    } finally {
+      (globalThis as unknown as { window?: unknown }).window = prevWindow;
+    }
+  });
 });
 
 describe("HttpError", () => {

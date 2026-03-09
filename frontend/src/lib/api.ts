@@ -86,7 +86,23 @@ const AUTH_TOKEN_STORAGE_KEY = "codex_web_auth_token";
 
 export function apiBase(): string {
   const envBase = (import.meta as unknown as { env?: Record<string, unknown> }).env?.VITE_API_BASE;
-  return (typeof envBase === "string" ? envBase : undefined) ?? DEFAULT_API_BASE;
+  if (typeof envBase === "string" && envBase.trim()) return envBase;
+
+  // In production the UI is often served by the daemon. Default to the current origin so mobile
+  // devices work without rebuilding with VITE_API_BASE. In dev (Vite), fall back to localhost.
+  if (typeof window !== "undefined") {
+    const origin = window.location?.origin;
+    const host = window.location?.hostname ?? "";
+    const port = window.location?.port ?? "";
+
+    const isLocalHost = host === "localhost" || host === "127.0.0.1";
+    const isViteDevPort = port === "5173" || port === "5174";
+
+    if (isLocalHost && isViteDevPort) return DEFAULT_API_BASE;
+    if (typeof origin === "string" && origin.trim() && origin !== "null") return origin;
+  }
+
+  return DEFAULT_API_BASE;
 }
 
 export function wsBase(): string {

@@ -47,6 +47,9 @@ If you run the daemon on a different address, set:
 VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 ```
 
+If you serve the UI from the daemon (via `--static-dir` or the `bundled-ui` feature), the UI defaults to
+using the current page origin as its API base (so mobile devices work without rebuilding).
+
 In the UI, click “New conversation…” to pick a project directory (the picker starts at your home directory).
 
 UI tips:
