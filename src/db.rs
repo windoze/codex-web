@@ -312,6 +312,20 @@ impl Db {
         Ok(())
     }
 
+    pub async fn delete_conversation(&self, conversation_id: Uuid) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM conversations
+            WHERE id = ?1
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .execute(&self.pool)
+        .await
+        .context("delete conversation")?;
+        Ok(result.rows_affected() == 1)
+    }
+
     pub async fn append_event(
         &self,
         conversation_id: Uuid,
@@ -617,6 +631,36 @@ impl Db {
         .context("resolve interaction_request")?;
 
         Ok(result.rows_affected() == 1)
+    }
+
+    pub async fn resolve_all_pending_interactions(
+        &self,
+        conversation_id: Uuid,
+        response: &Value,
+        resolved_by: &str,
+    ) -> anyhow::Result<usize> {
+        let now = now_ms();
+        let response_json = serde_json::to_string(response).context("serialize response")?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE interaction_requests
+            SET status = 'resolved',
+                resolved_at_ms = ?2,
+                resolved_by = ?3,
+                response_json = ?4
+            WHERE conversation_id = ?1 AND status = 'pending'
+            "#,
+        )
+        .bind(conversation_id.to_string())
+        .bind(now)
+        .bind(resolved_by)
+        .bind(response_json)
+        .execute(&self.pool)
+        .await
+        .context("resolve all pending interactions")?;
+
+        Ok(result.rows_affected() as usize)
     }
 
     async fn ensure_run_row(&self, conversation_id: Uuid) -> anyhow::Result<()> {

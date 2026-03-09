@@ -158,6 +158,18 @@ body {
   cursor: pointer;
 }
 
+.buttonWarn {
+  border-color: rgba(255, 170, 0, 0.45);
+  background: rgba(255, 170, 0, 0.14);
+  color: rgba(255, 170, 0, 0.95);
+}
+
+.buttonDanger {
+  border-color: rgba(255, 0, 0, 0.45);
+  background: rgba(255, 0, 0, 0.12);
+  color: rgba(255, 0, 0, 0.92);
+}
+
 .buttonSmall {
   padding: 7px 10px;
   border-radius: 10px;

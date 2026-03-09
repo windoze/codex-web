@@ -47,6 +47,7 @@ async fn runs_configured_on_turn_finished_command() {
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             on_turn_finished_command: Some(hook_cmd),
+            turn_manager: codex_web::turns::TurnManager::default(),
         },
         None,
     );

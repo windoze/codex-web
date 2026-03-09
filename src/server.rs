@@ -42,6 +42,7 @@ pub struct AppState {
     pub interaction_default_action: String,
     pub run_semaphore: Arc<Semaphore>,
     pub on_turn_finished_command: Option<String>,
+    pub turn_manager: crate::turns::TurnManager,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -51,6 +52,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let (event_tx, _rx) = broadcast::channel(1024);
     let ws_clients = Arc::new(AtomicUsize::new(0));
     let run_semaphore = Arc::new(Semaphore::new(config.max_concurrent_runs.max(1)));
+    let turn_manager = crate::turns::TurnManager::default();
     let codex = crate::codex::CodexRuntime::Real(crate::codex::CodexReal {
         ask_for_approval: config.codex_ask_for_approval.clone(),
         sandbox: config.codex_sandbox.clone(),
@@ -71,6 +73,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             interaction_default_action: config.interaction_default_action.clone(),
             run_semaphore,
             on_turn_finished_command: config.on_turn_finished_command.clone(),
+            turn_manager,
         },
         config.static_dir.as_deref(),
     );
@@ -313,6 +316,7 @@ mod tests {
                 interaction_default_action: "decline".to_string(),
                 run_semaphore: Arc::new(Semaphore::new(1)),
                 on_turn_finished_command: None,
+                turn_manager: crate::turns::TurnManager::default(),
             },
             None,
         );

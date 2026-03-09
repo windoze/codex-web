@@ -11,9 +11,12 @@ import {
   FsEntry,
   apiBase,
   clearAuthToken,
+  cancelConversation,
   createConversation,
   createProject,
+  deleteConversation,
   getAuthToken,
+  httpStatusFromUnknown,
   isUnauthorizedError,
   listConversations,
   listEvents,
@@ -505,18 +508,28 @@ export function eventsToChatItems(
       if (claudeType === "assistant_message" || claudeType === "assistant_message_completed") {
         const text = payload?.text;
         if (typeof text === "string" && text) {
-          const next = events[i + 1];
-          if (next?.event_type === "agent_message") {
-            continue;
+          // Prefer progressive streaming UX:
+          // - If we already started a delta bubble, "snap" it to the full text.
+          // - If we didn't see deltas, still treat this as the active bubble so a later derived
+          //   `agent_message` (emitted by the backend at end-of-turn) overwrites it instead of
+          //   creating a duplicate bubble.
+          if (activeStreamIndex != null) {
+            out[activeStreamIndex].text = text;
+            out[activeStreamIndex].kind = "agent_message";
+          } else {
+            const messageId = payload?.message_id;
+            const id = typeof messageId === "string" ? `claude:${messageId}` : null;
+            out.push({
+              key: `claude-final-${id ?? e.id}`,
+              role: "assistant",
+              text,
+              format: "markdown",
+              tone: "normal",
+              kind: "agent_message",
+            });
+            activeStreamIndex = out.length - 1;
+            activeStreamItemId = id;
           }
-          out.push({
-            key: `e-${e.id}`,
-            role: "assistant",
-            text,
-            format: "markdown",
-            tone: "normal",
-            kind: "agent_message",
-          });
           continue;
         }
       }
@@ -689,7 +702,8 @@ export default function App() {
     [conversations, activeConversationId],
   );
   const runStatus = useMemo(() => deriveRunStatusFromEvents(events), [events]);
-  const isConversationRunning = isTurnInProgress(runStatus);
+  const effectiveRunStatus = runStatus ?? activeConversation?.run_status ?? null;
+  const isConversationRunning = isTurnInProgress(effectiveRunStatus);
   const tokenUsage = useMemo(() => deriveTokenUsageFromEvents(events), [events]);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -1208,6 +1222,86 @@ export default function App() {
     }
   }
 
+  async function onCancelConversation() {
+    if (!activeConversation) return;
+    if (!isConversationRunning) return;
+    const ok = window.confirm(`Stop the running turn in "${activeConversation.title}"?`);
+    if (!ok) return;
+    setError(null);
+    try {
+      await cancelConversation(activeConversation.id);
+    } catch (err: unknown) {
+      if (isUnauthorizedError(err)) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onDeleteConversation() {
+    if (!activeConversation) return;
+    const conversationId = activeConversation.id;
+    const label = conversationTitleForList(activeConversation, conversationProject(activeConversation));
+
+    const ok = window.confirm(`Delete "${label}"? This cannot be undone.`);
+    if (!ok) return;
+
+    setError(null);
+    try {
+      await deleteConversation(conversationId);
+    } catch (err: unknown) {
+      if (isUnauthorizedError(err)) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
+
+      const status = httpStatusFromUnknown(err);
+      if (status === 409) {
+        const stopOk = window.confirm(`"${label}" is running. Stop it and delete?`);
+        if (!stopOk) return;
+
+        try {
+          await cancelConversation(conversationId);
+
+          const start = Date.now();
+          while (Date.now() - start < 8000) {
+            const list = await listConversations();
+            const item = list.find((c) => c.id === conversationId);
+            if (!item) break;
+            if (!isTurnInProgress(item.run_status)) break;
+            await new Promise((r) => window.setTimeout(r, 250));
+          }
+
+          await deleteConversation(conversationId);
+        } catch (stopDeleteErr: unknown) {
+          if (isUnauthorizedError(stopDeleteErr)) {
+            enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+            return;
+          }
+          setError(stopDeleteErr instanceof Error ? stopDeleteErr.message : String(stopDeleteErr));
+          return;
+        }
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+    }
+
+    try {
+      const list = await listConversations();
+      setConversations(list);
+      setActiveConversationId(list[0]?.id ?? null);
+      setEvents([]);
+    } catch (err: unknown) {
+      if (isUnauthorizedError(err)) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function onLogin(e: FormEvent) {
     e.preventDefault();
     const trimmed = loginTokenDraft.trim();
@@ -1382,7 +1476,7 @@ export default function App() {
                   {tokenUsage.output_tokens} output tokens)
                 </span>
               ) : null}
-              {runStatus ? <span className="chatStatus">({runStatus})</span> : null}
+              {effectiveRunStatus ? <span className="chatStatus">({effectiveRunStatus})</span> : null}
             </div>
           </div>
           <div className="chatActions">
@@ -1396,11 +1490,19 @@ export default function App() {
             </label>
             {activeConversation ? (
               <>
+                {isConversationRunning ? (
+                  <button className="button buttonWarn" type="button" onClick={onCancelConversation}>
+                    Stop
+                  </button>
+                ) : null}
                 <button className="button" type="button" onClick={onRenameConversation}>
                   Rename
                 </button>
                 <button className="button" type="button" onClick={onArchiveConversation}>
                   Archive
+                </button>
+                <button className="button buttonDanger" type="button" onClick={onDeleteConversation}>
+                  Delete
                 </button>
                 <a
                   className="button"

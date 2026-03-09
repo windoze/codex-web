@@ -196,6 +196,7 @@ where
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    cmd.kill_on_drop(true);
 
     let mut child = cmd.spawn().context("spawn codex process")?;
     let stdout = child.stdout.take().context("codex stdout missing")?;

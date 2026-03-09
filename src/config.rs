@@ -71,12 +71,11 @@ pub struct ServeArgs {
     )]
     pub codex_sandbox: String,
 
-    /// Claude Code binary to execute (or a bridge wrapper that implements the JSONL contract)
-    #[arg(
-        long,
-        env = "CODEX_WEB_CLAUDE_CODE_BIN",
-        default_value = "claude-code"
-    )]
+    /// Claude Code binary to execute.
+    ///
+    /// - Set to `claude` to use the native Claude Code CLI.
+    /// - Or point to a bridge/wrapper that implements the JSONL contract.
+    #[arg(long, env = "CODEX_WEB_CLAUDE_CODE_BIN", default_value = "claude")]
     pub claude_code_bin: String,
 
     /// Additional arguments passed to the Claude Code binary.

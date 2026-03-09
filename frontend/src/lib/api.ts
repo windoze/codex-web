@@ -211,6 +211,18 @@ export function postUserMessage(conversationId: Uuid, text: string): Promise<Con
   });
 }
 
+export function cancelConversation(conversationId: Uuid): Promise<{ status: string }> {
+  return jsonFetch<{ status: string }>(`/api/conversations/${conversationId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function deleteConversation(conversationId: Uuid): Promise<{ status: string }> {
+  return jsonFetch<{ status: string }>(`/api/conversations/${conversationId}`, {
+    method: "DELETE",
+  });
+}
+
 export function listPendingInteractions(conversationId: Uuid): Promise<InteractionRequest[]> {
   return jsonFetch<InteractionRequest[]>(`/api/conversations/${conversationId}/interactions`);
 }

@@ -26,6 +26,7 @@ async fn test_app(db_path: &Path) -> axum::Router {
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             on_turn_finished_command: None,
+            turn_manager: codex_web::turns::TurnManager::default(),
         },
         None,
     )

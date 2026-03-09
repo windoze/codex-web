@@ -54,7 +54,7 @@ Claude Code’s CLI/protocol details determine how “deep” this integration c
 
 ### 3.1 CLI surface
 Questions to answer during a short spike:
-- What is the canonical executable name (`claude-code`, `claude`, something else)?
+- What is the canonical executable name (`claude`, `claude-code`, something else)?
 - Does it support **non-interactive** operation suitable for a daemon?
 - Does it support a **session/thread id** that can be resumed per turn (analogous to `codex exec resume <SESSION_ID>`)?
 - Is there a **structured output mode** (ideally JSONL) that can be parsed incrementally for streaming?
@@ -73,15 +73,23 @@ we should implement one of these fallbacks:
 2) Limit Claude Code support to “best-effort transcript capture” without interactive approvals (not recommended).
 
 ### 3.4 Implemented contract (current MVP)
-The current Claude runner is implemented against a **bridge-style** contract (it may work with a native CLI
-if it happens to match the same shape).
+The Claude runner supports two invocation styles:
 
-Execution command (from the daemon, `cwd = project_root`):
+1) **Bridge/wrapper mode** (default): compatible with any executable that implements the JSONL contract below.
+2) **Native `claude` mode**: when `CODEX_WEB_CLAUDE_CODE_BIN` points to a binary named `claude` (or `claude.exe`),
+   the runner invokes the native CLI and canonicalizes its `--output-format=stream-json` output into the same minimal
+   event shapes used by the bridge.
+
+Bridge execution command (from the daemon, `cwd = project_root`):
 - `claude-code exec --json <PROMPT>`
 - `claude-code exec resume <SESSION_ID> --json <PROMPT>` (when `tool_session_id` is present)
 
+Native execution command (from the daemon, `cwd = project_root`):
+- First turn: `claude --print --output-format=stream-json --session-id <UUID> <PROMPT>`
+- Subsequent turns: `claude --print --output-format=stream-json --resume <UUID> <PROMPT>`
+
 Stdout is expected to be **JSONL**, where each line is a JSON object. codex-web persists each JSON object
-as a raw `claude_event` conversation event, and derives an `agent_message` at the end of the turn.
+as a `claude_event` conversation event, and derives an `agent_message` at the end of the turn.
 
 Recognized JSON event shapes (minimal):
 - `{ "type": "session_configured", "session_id": "..." }`
@@ -89,9 +97,12 @@ Recognized JSON event shapes (minimal):
 - `{ "type": "assistant_message_completed", "text": "..." }` (optional)
 - `{ "type": "interaction_request", "kind": "...", "prompt": "..." }`
 
-Interaction responses are written back to the tool’s stdin using a simple terminal-style protocol:
-- Accept/decline → `y\\n` / `n\\n`
-- Text input (kind `claude.input`) → `<text>\\n`
+Interaction responses:
+- Bridge/wrapper mode supports writing responses back to the tool’s stdin using a simple terminal-style protocol:
+  - Accept/decline → `y\\n` / `n\\n`
+  - Text input (kind `claude.input`) → `<text>\\n`
+- Native `claude` mode currently runs with stdin closed to avoid hangs (the CLI may block waiting for stdin EOF),
+  so interactive prompts cannot be answered programmatically. If you need interaction support, use a bridge/wrapper.
 
 ---
 

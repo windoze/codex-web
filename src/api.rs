@@ -10,7 +10,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::db::{
-    Conversation, ConversationEvent, ConversationListItem, InteractionRequest, Project, Run,
+    Conversation, ConversationEvent, ConversationListItem, InteractionRequest, Project, Run, RunStatus,
 };
 use crate::server::AppState;
 use crate::tool::ToolKind;
@@ -26,7 +26,13 @@ pub fn router() -> Router<AppState> {
         .route("/fs/list", get(fs_list))
         .route(
             "/conversations/:conversation_id",
-            get(get_conversation).patch(update_conversation),
+            get(get_conversation)
+                .patch(update_conversation)
+                .delete(delete_conversation),
+        )
+        .route(
+            "/conversations/:conversation_id/cancel",
+            post(cancel_conversation),
         )
         .route(
             "/conversations/:conversation_id/export",
@@ -350,6 +356,105 @@ async fn update_conversation(
     Ok(Json(updated))
 }
 
+async fn cancel_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    state
+        .db
+        .get_conversation_optional(conversation_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("conversation not found"))?;
+
+    let run = state
+        .db
+        .get_run(conversation_id)
+        .await
+        .map_err(ApiError::internal)?;
+
+    let in_progress = matches!(
+        run.status,
+        RunStatus::Queued | RunStatus::Running | RunStatus::WaitingForInteraction
+    );
+
+    if !in_progress {
+        return Ok(Json(json!({ "status": "not_running" })));
+    }
+
+    // Best-effort in-memory cancellation. If there is no in-memory runner (e.g. daemon restart),
+    // mark the run as aborted so the conversation can proceed.
+    if !state.turn_manager.cancel(conversation_id) {
+        state
+            .db
+            .resolve_all_pending_interactions(
+                conversation_id,
+                &json!({ "action": "decline", "reason": "run_cancelled" }),
+                "cancel",
+            )
+            .await
+            .map_err(ApiError::internal)?;
+
+        state
+            .db
+            .mark_run_completed(conversation_id, RunStatus::Aborted, None, None)
+            .await
+            .map_err(ApiError::internal)?;
+
+        let ev = state
+            .db
+            .append_event(conversation_id, "run_status", &json!({ "status": "aborted" }))
+            .await
+            .map_err(ApiError::internal)?;
+        let _ = state.event_tx.send(ev);
+
+        return Ok(Json(json!({ "status": "aborted" })));
+    }
+
+    Ok(Json(json!({ "status": "cancelling" })))
+}
+
+async fn delete_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    state
+        .db
+        .get_conversation_optional(conversation_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("conversation not found"))?;
+
+    let run = state
+        .db
+        .get_run(conversation_id)
+        .await
+        .map_err(ApiError::internal)?;
+
+    let in_progress = matches!(
+        run.status,
+        RunStatus::Queued | RunStatus::Running | RunStatus::WaitingForInteraction
+    );
+    if in_progress {
+        return Err(ApiError::conflict(
+            "conversation is running; cancel it before deleting",
+        ));
+    }
+
+    state.turn_manager.unregister(conversation_id);
+
+    let deleted = state
+        .db
+        .delete_conversation(conversation_id)
+        .await
+        .map_err(ApiError::internal)?;
+    if !deleted {
+        return Err(ApiError::not_found("conversation not found"));
+    }
+
+    Ok(Json(json!({ "status": "ok" })))
+}
+
 #[derive(Debug, Deserialize)]
 struct ExportQuery {
     format: Option<String>,
@@ -525,6 +630,10 @@ async fn post_user_message(
         .await
         .map_err(ApiError::internal)?;
 
+    // Register an in-memory cancellation handle for this turn.
+    state.turn_manager.unregister(conversation_id);
+    let cancel_rx = state.turn_manager.register(conversation_id);
+
     let runner = state.runners.for_tool(conversation.tool);
     let ctx = crate::orchestrator::TurnContext {
         db: state.db.clone(),
@@ -539,6 +648,8 @@ async fn post_user_message(
         interaction_default_action: state.interaction_default_action.clone(),
         run_semaphore: state.run_semaphore.clone(),
         on_turn_finished_command: state.on_turn_finished_command.clone(),
+        cancel_rx,
+        turn_manager: state.turn_manager.clone(),
     };
 
     tokio::spawn(async move {

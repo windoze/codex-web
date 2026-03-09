@@ -65,8 +65,10 @@ Interaction requests represent “blocking” prompts (e.g., approvals) that can
     - Marks the conversation run as `running` (non-reentrant; concurrent sends return `409`)
     - Spawns a per-turn assistant run based on `conversation.tool`:
       - `codex`: `codex exec --json` / `codex exec resume <SESSION_ID> --json`
-      - `claude-code`: `claude-code exec --json` / `claude-code exec resume <SESSION_ID> --json`
-        - The Claude runner expects JSONL on stdout (either native or via a small wrapper/bridge).
+      - `claude-code`:
+        - Bridge/wrapper mode (default): `<CODEX_WEB_CLAUDE_CODE_BIN> exec --json` / `... exec resume <SESSION_ID> --json`
+        - Native mode (when `CODEX_WEB_CLAUDE_CODE_BIN=claude`): `claude --print --output-format=stream-json [--resume <UUID> | --session-id <UUID>] <PROMPT>`
+        - The Claude runner expects JSONL on stdout.
     - Emits additional conversation events:
       - `run_status` (`running` → `completed` / `failed`)
       - `codex_event` (raw Codex JSONL; only when `conversation.tool = codex`)

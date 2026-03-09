@@ -68,15 +68,19 @@ Expected:
 
 ## Claude Code run verification (Milestone: Claude runner MVP)
 
-1. Ensure `claude-code` is available (or configure `CODEX_WEB_CLAUDE_CODE_BIN` to a wrapper that implements the JSONL contract).
-   - For a quick end-to-end smoke test without a real Claude binary, you can set
-     `CODEX_WEB_CLAUDE_CODE_BIN=./scripts/claude-code-bridge-demo.sh`.
+1. Ensure Claude Code is available:
+   - Native CLI: if you have `claude` in your `PATH`, you can set `CODEX_WEB_CLAUDE_CODE_BIN=claude`.
+   - Bridge/wrapper: configure `CODEX_WEB_CLAUDE_CODE_BIN` to a wrapper that implements the JSONL contract.
+     - For a quick end-to-end smoke test without a real Claude backend, you can set
+       `CODEX_WEB_CLAUDE_CODE_BIN=./scripts/claude-code-bridge-demo.sh`.
 2. Start the daemon and UI.
 3. Create a conversation with `tool = claude-code`.
 4. Send a message.
 
 Expected:
-- The server invokes `claude-code exec ... --json` in that project directory.
+- The server invokes Claude Code in that project directory:
+  - bridge mode: `<bin> exec ... --json`
+  - native mode (`CODEX_WEB_CLAUDE_CODE_BIN=claude`): `claude --print --output-format=stream-json ...`
 - The UI receives `run_status` events and then an `agent_message` event.
 - Raw tool output is persisted as `claude_event` events.
 

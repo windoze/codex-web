@@ -160,6 +160,32 @@ describe("ui helpers", () => {
     expect(items[0].kind).toBe("agent_message");
   });
 
+  it("merges claude deltas + completed + derived agent_message without duplicating", () => {
+    const events = [
+      e(1, "claude_event", { type: "assistant_message_delta", delta: "hel", message_id: "m1" }),
+      e(2, "claude_event", { type: "assistant_message_delta", delta: "lo", message_id: "m1" }),
+      e(3, "claude_event", { type: "assistant_message_completed", text: "hello", message_id: "m1" }),
+      e(4, "agent_message", { text: "hello" }),
+    ];
+    const items = eventsToChatItems(events, { showRawMessages: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].role).toBe("assistant");
+    expect(items[0].text).toBe("hello");
+    expect(items[0].kind).toBe("agent_message");
+  });
+
+  it("merges claude completed + extra raw events + derived agent_message without duplicating", () => {
+    const events = [
+      e(1, "claude_event", { type: "assistant_message_completed", text: "hi", message_id: "m2" }),
+      e(2, "claude_event", { type: "claude.native_event", raw: { any: "thing" } }),
+      e(3, "agent_message", { text: "hi" }),
+    ];
+    const items = eventsToChatItems(events, { showRawMessages: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].role).toBe("assistant");
+    expect(items[0].text).toBe("hi");
+  });
+
   it("shows raw claude JSON when raw toggle is on", () => {
     const events = [e(1, "claude_event", { type: "session_configured", session_id: "sess" })];
     const items = eventsToChatItems(events, { showRawMessages: true });

@@ -7,7 +7,9 @@ The core idea is simple:
 - The web UI is stateless: it reconnects and “catches up” from the event log.
 - Assistant execution is **per-turn**:
   - Codex: `codex exec --json` and `codex exec resume <SESSION_ID> --json`
-  - Claude Code: `claude-code exec --json` and `claude-code exec resume <SESSION_ID> --json` (native or via a small wrapper/bridge)
+  - Claude Code:
+    - bridge/wrapper: `claude-code exec --json` and `claude-code exec resume <SESSION_ID> --json`
+    - native CLI (`claude`): `claude --print --output-format=stream-json [--resume <UUID> | --session-id <UUID>] <PROMPT>`
 
 See `PLAN.md` for the overall roadmap, and `claude-code.md` for Claude Code integration details.
 
@@ -15,7 +17,9 @@ See `PLAN.md` for the overall roadmap, and `claude-code.md` for Claude Code inte
 
 - Rust toolchain (edition 2024)
 - `codex` CLI available in `PATH` (required for Codex conversations)
-- `claude-code` available in `PATH` (optional; required for Claude Code conversations)
+- Claude Code CLI available in `PATH` (optional; required for Claude Code conversations):
+  - native: `claude`
+  - bridge/wrapper: `claude-code` (or any executable implementing the JSONL contract)
 
 Frontend requirements (added in later milestones):
 - Node.js + npm

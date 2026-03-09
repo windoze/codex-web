@@ -30,6 +30,7 @@ async fn posting_message_runs_claude_stub_and_persists_events() {
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             on_turn_finished_command: None,
+            turn_manager: codex_web::turns::TurnManager::default(),
         },
         None,
     );
@@ -143,4 +144,3 @@ async fn posting_message_runs_claude_stub_and_persists_events() {
         .and_then(|v| v.as_str());
     assert_eq!(session_id, Some("sess_1"));
 }
-

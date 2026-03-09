@@ -4,14 +4,17 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
-use tokio::sync::Semaphore;
-use tokio::sync::broadcast;
+use tokio::sync::{Semaphore, broadcast, watch};
 use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::db::{ConversationEvent, Db, RunStatus};
 use crate::events::emit;
 use crate::runners::Runner;
+
+#[derive(Debug, thiserror::Error)]
+#[error("turn cancelled")]
+pub struct TurnCancelled;
 
 #[derive(Clone)]
 pub struct TurnContext {
@@ -27,35 +30,61 @@ pub struct TurnContext {
     pub interaction_default_action: String,
     pub run_semaphore: Arc<Semaphore>,
     pub on_turn_finished_command: Option<String>,
+    pub cancel_rx: watch::Receiver<bool>,
+    pub turn_manager: crate::turns::TurnManager,
 }
 
 pub async fn run_turn(ctx: TurnContext) {
     let conversation_id = ctx.conversation_id;
     let project_root = ctx.project_root.clone();
     let on_turn_finished_command = ctx.on_turn_finished_command.clone();
+    let turn_manager = ctx.turn_manager.clone();
     let db = ctx.db.clone();
     let event_tx = ctx.event_tx.clone();
     let tool = ctx.runner.tool();
 
-    if let Err(err) = run_turn_inner(ctx).await {
+    let result = run_turn_inner(ctx).await;
+    turn_manager.unregister(conversation_id);
+
+    if let Err(err) = result {
         tracing::error!(tool = %tool, error = ?err, "turn failed");
+
+        let (status, payload) = if err.downcast_ref::<TurnCancelled>().is_some() {
+            (
+                RunStatus::Aborted,
+                serde_json::json!({ "status": "aborted" }),
+            )
+        } else {
+            (
+                RunStatus::Failed,
+                serde_json::json!({ "status": "failed", "error": err.to_string() }),
+            )
+        };
+
         let _ = db
-            .mark_run_completed(conversation_id, RunStatus::Failed, None, None)
+            .resolve_all_pending_interactions(
+                conversation_id,
+                &serde_json::json!({ "action": "decline", "reason": "run_cancelled" }),
+                "cancel",
+            )
             .await;
-        let _ = emit(
-            &db,
-            &event_tx,
-            conversation_id,
-            "run_status",
-            &serde_json::json!({ "status": "failed", "error": err.to_string() }),
-        )
-        .await;
+
+        let _ = db
+            .mark_run_completed(conversation_id, status.clone(), None, None)
+            .await;
+        let _ = emit(&db, &event_tx, conversation_id, "run_status", &payload).await;
+
+        let tool_session_id = db
+            .get_run(conversation_id)
+            .await
+            .ok()
+            .and_then(|r| r.tool_session_id);
         spawn_turn_finished_hook(
             on_turn_finished_command.as_deref(),
             &project_root,
             conversation_id,
-            RunStatus::Failed,
-            None,
+            status.clone(),
+            tool_session_id.as_deref(),
         );
     }
 }
@@ -74,7 +103,13 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         interaction_default_action,
         run_semaphore,
         on_turn_finished_command,
+        mut cancel_rx,
+        turn_manager: _turn_manager,
     } = ctx;
+
+    if *cancel_rx.borrow() {
+        return Err(TurnCancelled.into());
+    }
 
     // Global concurrency limit across conversations.
     let permit = match run_semaphore.clone().try_acquire_owned() {
@@ -90,16 +125,37 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
                 &serde_json::json!({ "status": "queued" }),
             )
             .await?;
-            run_semaphore
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| anyhow::anyhow!("run semaphore closed"))?
+
+            let permit = tokio::select! {
+                p = run_semaphore.clone().acquire_owned() => {
+                    p.map_err(|_| anyhow::anyhow!("run semaphore closed"))?
+                }
+                res = cancel_rx.changed() => {
+                    let _ = res;
+                    return Err(TurnCancelled.into());
+                }
+            };
+
+            if *cancel_rx.borrow() {
+                return Err(TurnCancelled.into());
+            }
+
+            db.set_run_status(conversation_id, crate::db::RunStatus::Running)
+                .await?;
+            emit(
+                &db,
+                &event_tx,
+                conversation_id,
+                "run_status",
+                &serde_json::json!({ "status": "running" }),
+            )
+            .await?;
+
+            permit
         }
     };
 
-    let outcome = runner
-        .run_turn(crate::runners::RunnerTurnContext {
+    let run_fut = runner.run_turn(crate::runners::RunnerTurnContext {
             db: db.clone(),
             event_tx: event_tx.clone(),
             conversation_id,
@@ -109,10 +165,22 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
             ws_clients: ws_clients.clone(),
             interaction_timeout_ms,
             interaction_default_action: interaction_default_action.clone(),
-        })
-        .await?;
+        });
+    tokio::pin!(run_fut);
+
+    let outcome = tokio::select! {
+        res = &mut run_fut => res?,
+        res = cancel_rx.changed() => {
+            let _ = res;
+            return Err(TurnCancelled.into());
+        }
+    };
 
     drop(permit);
+
+    if *cancel_rx.borrow() {
+        return Err(TurnCancelled.into());
+    }
 
     db.mark_run_completed(
         conversation_id,
