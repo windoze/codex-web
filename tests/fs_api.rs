@@ -22,6 +22,7 @@ async fn test_app(db_path: &Path) -> axum::Router {
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+            on_turn_finished_command: None,
         },
         None,
     )

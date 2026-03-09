@@ -534,6 +534,7 @@ async fn post_user_message(
         interaction_timeout_ms: state.interaction_timeout_ms,
         interaction_default_action: state.interaction_default_action.clone(),
         run_semaphore: state.run_semaphore.clone(),
+        on_turn_finished_command: state.on_turn_finished_command.clone(),
     };
 
     tokio::spawn(async move {

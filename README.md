@@ -103,7 +103,24 @@ The daemon can be configured via CLI flags or environment variables:
 - `CODEX_WEB_CODEX_APPROVAL_POLICY` (default `never`)
 - `CODEX_WEB_CODEX_SANDBOX` (default `workspace-write`)
 - `CODEX_WEB_MAX_CONCURRENT_RUNS` (default `2`)
+- `CODEX_WEB_ON_TURN_FINISHED_COMMAND` (optional; run a shell command when a turn finishes; `cwd` = project root)
 - `RUST_LOG` (default `codex_web=info,tower_http=info`)
+
+### Turn-finished hook
+
+If `CODEX_WEB_ON_TURN_FINISHED_COMMAND` (or `--on-turn-finished-command`) is set, the daemon will run
+the command after each turn finishes (success or failure). The command runs on the same machine as the daemon.
+
+Environment variables available to the command:
+- `CODEX_WEB_CONVERSATION_ID`
+- `CODEX_WEB_PROJECT_ROOT`
+- `CODEX_WEB_RUN_STATUS` (`completed` / `failed` / `aborted`)
+- `CODEX_WEB_CODEX_SESSION_ID` (may be empty)
+
+Notes:
+- The command runs with `cwd` set to the project root.
+- The command is executed via `sh -lc` (Unix) or `cmd /C` (Windows).
+- The daemon kills the command if it runs longer than 30 seconds.
 
 ## Codex protocol schemas
 

@@ -1,11 +1,14 @@
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio::sync::Semaphore;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::codex::{CodexInvocation, CodexOutputLine, CodexRuntime};
@@ -25,10 +28,13 @@ pub struct TurnContext {
     pub interaction_timeout_ms: i64,
     pub interaction_default_action: String,
     pub run_semaphore: Arc<Semaphore>,
+    pub on_turn_finished_command: Option<String>,
 }
 
 pub async fn run_turn(ctx: TurnContext) {
     let conversation_id = ctx.conversation_id;
+    let project_root = ctx.project_root.clone();
+    let on_turn_finished_command = ctx.on_turn_finished_command.clone();
     let db = ctx.db.clone();
     let event_tx = ctx.event_tx.clone();
 
@@ -45,6 +51,13 @@ pub async fn run_turn(ctx: TurnContext) {
             &serde_json::json!({ "status": "failed", "error": err.to_string() }),
         )
         .await;
+        spawn_turn_finished_hook(
+            on_turn_finished_command.as_deref(),
+            &project_root,
+            conversation_id,
+            RunStatus::Failed,
+            None,
+        );
     }
 }
 
@@ -61,6 +74,7 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         interaction_timeout_ms,
         interaction_default_action,
         run_semaphore,
+        on_turn_finished_command,
     } = ctx;
 
     // Global concurrency limit across conversations.
@@ -88,7 +102,7 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
     let outcome = crate::codex::run_jsonl_events_with_input(
         codex,
         CodexInvocation {
-            project_root,
+            project_root: project_root.clone(),
             session_id,
             prompt,
         },
@@ -171,6 +185,14 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
     )
     .await?;
 
+    spawn_turn_finished_hook(
+        on_turn_finished_command.as_deref(),
+        &project_root,
+        conversation_id,
+        RunStatus::Completed,
+        outcome.session_id.as_deref(),
+    );
+
     Ok(())
 }
 
@@ -184,6 +206,85 @@ async fn emit(
     let e = db.append_event(conversation_id, event_type, payload).await?;
     let _ = tx.send(e.clone());
     Ok(e)
+}
+
+fn run_status_str(status: RunStatus) -> &'static str {
+    match status {
+        RunStatus::Idle => "idle",
+        RunStatus::Queued => "queued",
+        RunStatus::Running => "running",
+        RunStatus::Completed => "completed",
+        RunStatus::Failed => "failed",
+        RunStatus::Aborted => "aborted",
+        RunStatus::WaitingForInteraction => "waiting_for_interaction",
+    }
+}
+
+fn spawn_turn_finished_hook(
+    command: Option<&str>,
+    project_root: &PathBuf,
+    conversation_id: Uuid,
+    status: RunStatus,
+    codex_session_id: Option<&str>,
+) {
+    let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else {
+        return;
+    };
+
+    let command = command.to_string();
+    let cwd = project_root.clone();
+    let conversation_id = conversation_id.to_string();
+    let status_str = run_status_str(status).to_string();
+    let session_id = codex_session_id.unwrap_or("").to_string();
+
+    tokio::spawn(async move {
+        let mut cmd = if cfg!(windows) {
+            let mut c = tokio::process::Command::new("cmd");
+            c.arg("/C").arg(command);
+            c
+        } else {
+            let mut c = tokio::process::Command::new("sh");
+            c.arg("-lc").arg(command);
+            c
+        };
+
+        cmd.current_dir(&cwd);
+        cmd.env("CODEX_WEB_CONVERSATION_ID", &conversation_id);
+        cmd.env(
+            "CODEX_WEB_PROJECT_ROOT",
+            cwd.to_string_lossy().to_string(),
+        );
+        cmd.env("CODEX_WEB_RUN_STATUS", &status_str);
+        cmd.env("CODEX_WEB_CODEX_SESSION_ID", &session_id);
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::inherit());
+        cmd.stderr(Stdio::inherit());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(err) => {
+                tracing::warn!(error = ?err, "failed to spawn on-turn-finished command");
+                return;
+            }
+        };
+
+        match timeout(Duration::from_secs(30), child.wait()).await {
+            Ok(Ok(exit)) => {
+                if exit.success() {
+                    tracing::info!("on-turn-finished command completed");
+                } else {
+                    tracing::warn!(exit_code = ?exit.code(), "on-turn-finished command failed");
+                }
+            }
+            Ok(Err(err)) => {
+                tracing::warn!(error = ?err, "on-turn-finished command wait failed");
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                tracing::warn!("on-turn-finished command timed out (killed after 30s)");
+            }
+        }
+    });
 }
 
 fn agent_message_text(event: &EventMsg) -> Option<String> {
@@ -398,6 +499,7 @@ mod tests {
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: Arc::new(Semaphore::new(1)),
+            on_turn_finished_command: None,
         })
         .await;
 
@@ -469,6 +571,7 @@ mod tests {
             interaction_timeout_ms: 1_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: Arc::new(Semaphore::new(1)),
+            on_turn_finished_command: None,
         })
         .await;
 

@@ -25,6 +25,7 @@ async fn bundled_ui_serves_index_html() {
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+            on_turn_finished_command: None,
         },
         None,
     );
@@ -70,6 +71,7 @@ async fn bundled_ui_falls_back_to_index_for_spa_paths() {
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+            on_turn_finished_command: None,
         },
         None,
     );

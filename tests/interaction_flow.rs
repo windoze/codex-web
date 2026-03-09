@@ -51,6 +51,7 @@ async fn interaction_can_be_resolved_via_api() {
             interaction_timeout_ms: 5_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            on_turn_finished_command: None,
         },
         None,
     );

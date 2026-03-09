@@ -36,6 +36,7 @@ async fn posting_message_runs_codex_stub_and_persists_agent_message() {
             interaction_timeout_ms: 30_000,
             interaction_default_action: "decline".to_string(),
             run_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+            on_turn_finished_command: None,
         },
         None,
     );

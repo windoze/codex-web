@@ -41,6 +41,7 @@ pub struct AppState {
     pub interaction_timeout_ms: i64,
     pub interaction_default_action: String,
     pub run_semaphore: Arc<Semaphore>,
+    pub on_turn_finished_command: Option<String>,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -64,6 +65,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             interaction_timeout_ms: config.interaction_timeout_ms,
             interaction_default_action: config.interaction_default_action.clone(),
             run_semaphore,
+            on_turn_finished_command: config.on_turn_finished_command.clone(),
         },
         config.static_dir.as_deref(),
     );
@@ -302,6 +304,7 @@ mod tests {
                 interaction_timeout_ms: 30_000,
                 interaction_default_action: "decline".to_string(),
                 run_semaphore: Arc::new(Semaphore::new(1)),
+                on_turn_finished_command: None,
             },
             None,
         );

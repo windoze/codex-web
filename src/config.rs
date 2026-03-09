@@ -74,6 +74,17 @@ pub struct ServeArgs {
     /// Maximum number of Codex turns to run concurrently across all conversations
     #[arg(long, env = "CODEX_WEB_MAX_CONCURRENT_RUNS", default_value_t = 2)]
     pub max_concurrent_runs: usize,
+
+    /// Optional shell command to run when a Codex turn finishes (completed/failed/aborted).
+    ///
+    /// The command is executed on the same machine as the daemon, with `cwd` set to the project root.
+    /// Environment variables are provided:
+    /// - CODEX_WEB_CONVERSATION_ID
+    /// - CODEX_WEB_PROJECT_ROOT
+    /// - CODEX_WEB_RUN_STATUS
+    /// - CODEX_WEB_CODEX_SESSION_ID (may be empty)
+    #[arg(long, env = "CODEX_WEB_ON_TURN_FINISHED_COMMAND")]
+    pub on_turn_finished_command: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -128,6 +139,7 @@ pub struct Config {
     pub codex_ask_for_approval: String,
     pub codex_sandbox: String,
     pub max_concurrent_runs: usize,
+    pub on_turn_finished_command: Option<String>,
 }
 
 impl Config {
@@ -147,6 +159,9 @@ impl Config {
             codex_ask_for_approval: args.codex_ask_for_approval,
             codex_sandbox: args.codex_sandbox,
             max_concurrent_runs: args.max_concurrent_runs,
+            on_turn_finished_command: args
+                .on_turn_finished_command
+                .filter(|cmd| !cmd.trim().is_empty()),
         })
     }
 
