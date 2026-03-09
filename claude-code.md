@@ -1,6 +1,6 @@
 # Claude Code support (plan)
 
-Status: **design / planning** (not implemented)
+Status: **phase 1 implemented** (tool persisted; generalized session storage). Runner + UI work pending.
 
 This document describes how to add **Claude Code** (referred to as `claude-code`) as an alternative
 execution backend alongside **Codex CLI** in `codex-web`.
@@ -209,16 +209,18 @@ This can be phased:
 ### 7.1 Database migrations (proposal)
 Add tool selection to conversations, and generalize run session id:
 
-1) `conversations.tool TEXT NOT NULL DEFAULT 'codex'`
-2) Replace `runs.codex_session_id` with a generic field:
-   - `runs.tool_session_id TEXT NULL`
-   - `runs.tool TEXT NOT NULL DEFAULT 'codex'` (optional if redundant with `conversations.tool`)
+Implemented in `migrations/0003_tool_and_tool_session.sql`:
+
+1) ✅ `conversations.tool TEXT NOT NULL DEFAULT 'codex'`
+2) ✅ Generalize the tool resume handle:
+   - `runs.tool_session_id TEXT NULL` (code uses this now)
+   - `runs.codex_session_id` remains as a legacy column for backward compatibility (can be removed in a later cleanup migration)
 
 Migration strategy (to keep compatibility simple):
-- Introduce new columns first; keep `codex_session_id` temporarily.
-- Backfill `runs.tool_session_id = runs.codex_session_id` where present.
-- Update code to use `tool_session_id`.
-- In a later cleanup migration, remove `codex_session_id`.
+- ✅ Introduced new columns first; kept `codex_session_id` temporarily.
+- ✅ Backfilled `runs.tool_session_id = runs.codex_session_id` where present.
+- ✅ Updated code to use `runs.tool_session_id`.
+- ⏳ Future cleanup: remove `runs.codex_session_id` once stable.
 
 If we want fewer migrations, we can instead add:
 - `runs.claude_session_id TEXT NULL`
@@ -306,9 +308,9 @@ Plan:
   - “bridge wrapper” integration
 
 ### Phase 1: Data model + API plumbing
-- Add `conversations.tool` to DB and API types.
-- Add generalized `runs.tool_session_id` storage (keeping backward compatibility).
-- Surface tool in `GET /api/conversations` list items.
+- ✅ Add `conversations.tool` to DB and API types.
+- ✅ Add generalized `runs.tool_session_id` storage (keeping backward compatibility).
+- ✅ Surface tool in `GET /api/conversations` list items.
 
 ### Phase 2: Runner abstraction
 - Refactor current Codex execution into `CodexRunner` behind a common interface.
@@ -340,10 +342,10 @@ Plan:
 ## 10) Acceptance criteria checklist
 
 ### Backend
-- [ ] `POST /api/conversations` accepts a tool choice and persists it.
-- [ ] `GET /api/conversations` returns tool per conversation.
-- [ ] Existing conversations without tool data behave as `codex`.
-- [ ] Runs remain non-reentrant per conversation.
+- [x] `POST /api/conversations` accepts a tool choice and persists it.
+- [x] `GET /api/conversations` returns tool per conversation.
+- [x] Existing conversations without tool data behave as `codex`.
+- [x] Runs remain non-reentrant per conversation.
 - [ ] Claude interactions appear in `/api/interactions/pending` and can be answered from terminal.
 
 ### Frontend
@@ -351,4 +353,3 @@ Plan:
 - [ ] Conversation list shows a tool badge/icon for every conversation.
 - [ ] Active conversation title/header shows the same badge/icon.
 - [ ] Claude conversations do not display Codex-specific UI in a broken way (no crashes).
-

@@ -27,7 +27,7 @@ The browser WebSocket endpoint (`/ws`) cannot set custom headers, so the UI uses
 ## Conversations
 
 - `POST /api/conversations`
-  - Body: `{ "project_id": "<uuid>|null", "title": "Optional" }`
+  - Body: `{ "project_id": "<uuid>|null", "title": "Optional", "tool": "codex"|"claude-code" (optional) }`
   - Response: `Conversation`
 - `GET /api/conversations`
   - Response: `(Conversation & { run_status: string })[]`
@@ -64,6 +64,7 @@ Interaction requests represent “blocking” prompts (e.g., approvals) that can
   - Side effects:
     - Marks the conversation run as `running` (non-reentrant; concurrent sends return `409`)
     - Spawns a Codex turn via `codex exec --json` / `codex exec resume <SESSION_ID> --json`
+      - Note: the conversation `tool` field exists for multi-backend support, but only `codex` execution is implemented today.
     - Emits additional conversation events:
       - `run_status` (`running` → `completed` / `failed`)
       - `codex_event` (raw Codex JSONL)

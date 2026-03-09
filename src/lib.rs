@@ -5,3 +5,4 @@ pub mod db;
 pub mod orchestrator;
 pub mod protocol;
 pub mod server;
+pub mod tool;

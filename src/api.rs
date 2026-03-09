@@ -13,6 +13,7 @@ use crate::db::{
     Conversation, ConversationEvent, ConversationListItem, InteractionRequest, Project, Run,
 };
 use crate::server::AppState;
+use crate::tool::ToolKind;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -226,6 +227,7 @@ async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project
 struct CreateConversationRequest {
     project_id: Option<Uuid>,
     title: Option<String>,
+    tool: Option<ToolKind>,
 }
 
 async fn create_conversation(
@@ -237,10 +239,11 @@ async fn create_conversation(
         .as_deref()
         .filter(|t| !t.trim().is_empty())
         .unwrap_or("New conversation");
+    let tool = req.tool.unwrap_or_default();
 
     let conversation = state
         .db
-        .create_conversation(req.project_id, title)
+        .create_conversation(req.project_id, title, tool)
         .await
         .map_err(ApiError::internal)?;
 
@@ -528,7 +531,7 @@ async fn post_user_message(
         codex: state.codex.clone(),
         conversation_id,
         project_root: PathBuf::from(project.root_path),
-        session_id: run.codex_session_id,
+        tool_session_id: run.tool_session_id,
         prompt,
         ws_clients: state.ws_clients.clone(),
         interaction_timeout_ms: state.interaction_timeout_ms,

@@ -22,7 +22,7 @@ pub struct TurnContext {
     pub codex: CodexRuntime,
     pub conversation_id: Uuid,
     pub project_root: PathBuf,
-    pub session_id: Option<String>,
+    pub tool_session_id: Option<String>,
     pub prompt: String,
     pub ws_clients: Arc<AtomicUsize>,
     pub interaction_timeout_ms: i64,
@@ -68,7 +68,7 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         codex,
         conversation_id,
         project_root,
-        session_id,
+        tool_session_id,
         prompt,
         ws_clients,
         interaction_timeout_ms,
@@ -103,7 +103,7 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         codex,
         CodexInvocation {
             project_root: project_root.clone(),
-            session_id,
+            session_id: tool_session_id,
             prompt,
         },
         |line| {
@@ -227,7 +227,7 @@ fn spawn_turn_finished_hook(
     project_root: &Path,
     conversation_id: Uuid,
     status: RunStatus,
-    codex_session_id: Option<&str>,
+    tool_session_id: Option<&str>,
 ) {
     let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else {
         return;
@@ -237,7 +237,7 @@ fn spawn_turn_finished_hook(
     let cwd = project_root.to_path_buf();
     let conversation_id = conversation_id.to_string();
     let status_str = run_status_str(status).to_string();
-    let session_id = codex_session_id.unwrap_or("").to_string();
+    let session_id = tool_session_id.unwrap_or("").to_string();
 
     tokio::spawn(async move {
         let mut cmd = if cfg!(windows) {
@@ -475,6 +475,7 @@ fn response_to_stdin(kind: &str, response: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tool::ToolKind;
 
     #[tokio::test]
     async fn derives_agent_message_from_codex_item() -> anyhow::Result<()> {
@@ -483,7 +484,9 @@ mod tests {
         let db = Db::connect(&db_path).await?;
 
         let project = db.create_project("p", temp_dir.path()).await?;
-        let convo = db.create_conversation(Some(project.id), "c").await?;
+        let convo = db
+            .create_conversation(Some(project.id), "c", ToolKind::Codex)
+            .await?;
         db.try_mark_run_running(convo.id).await?;
 
         let (event_tx, mut event_rx) = broadcast::channel(32);
@@ -506,7 +509,7 @@ mod tests {
             codex: CodexRuntime::stub(stub_events),
             conversation_id: convo.id,
             project_root: temp_dir.path().to_path_buf(),
-            session_id: None,
+            tool_session_id: None,
             prompt: "hi".to_string(),
             ws_clients: Arc::new(AtomicUsize::new(0)),
             interaction_timeout_ms: 30_000,
@@ -534,7 +537,7 @@ mod tests {
         let run = db.get_run(convo.id).await?;
         assert_eq!(run.status, RunStatus::Completed);
         assert_eq!(
-            run.codex_session_id.as_deref(),
+            run.tool_session_id.as_deref(),
             Some("00000000-0000-0000-0000-000000000001")
         );
 
@@ -548,7 +551,9 @@ mod tests {
         let db = Db::connect(&db_path).await?;
 
         let project = db.create_project("p", temp_dir.path()).await?;
-        let convo = db.create_conversation(Some(project.id), "c").await?;
+        let convo = db
+            .create_conversation(Some(project.id), "c", ToolKind::Codex)
+            .await?;
         db.try_mark_run_running(convo.id).await?;
 
         let (event_tx, _event_rx) = broadcast::channel(64);
@@ -580,7 +585,7 @@ mod tests {
             codex: CodexRuntime::stub(stub_events),
             conversation_id: convo.id,
             project_root: temp_dir.path().to_path_buf(),
-            session_id: None,
+            tool_session_id: None,
             prompt: "hi".to_string(),
             ws_clients: Arc::new(AtomicUsize::new(0)),
             interaction_timeout_ms: 1_000,

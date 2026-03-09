@@ -8,6 +8,8 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use uuid::Uuid;
 
+use crate::tool::ToolKind;
+
 #[derive(Clone)]
 pub struct Db {
     pool: SqlitePool,
@@ -157,12 +159,14 @@ impl Db {
         &self,
         project_id: Option<Uuid>,
         title: &str,
+        tool: ToolKind,
     ) -> anyhow::Result<Conversation> {
         let now = now_ms();
         let conversation = Conversation {
             id: Uuid::new_v4(),
             project_id,
             title: title.to_owned(),
+            tool,
             created_at_ms: now,
             updated_at_ms: now,
             archived_at_ms: None,
@@ -170,13 +174,14 @@ impl Db {
 
         sqlx::query(
             r#"
-            INSERT INTO conversations (id, project_id, title, created_at_ms, updated_at_ms, archived_at_ms)
-            VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+            INSERT INTO conversations (id, project_id, title, tool, created_at_ms, updated_at_ms, archived_at_ms)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)
             "#,
         )
         .bind(conversation.id.to_string())
         .bind(project_id.map(|p| p.to_string()))
         .bind(&conversation.title)
+        .bind(conversation.tool.as_str())
         .bind(conversation.created_at_ms)
         .bind(conversation.updated_at_ms)
         .execute(&self.pool)
@@ -191,7 +196,7 @@ impl Db {
     pub async fn list_conversations(&self) -> anyhow::Result<Vec<Conversation>> {
         let rows = sqlx::query_as::<_, ConversationRow>(
             r#"
-            SELECT id, project_id, title, created_at_ms, updated_at_ms, archived_at_ms
+            SELECT id, project_id, title, tool, created_at_ms, updated_at_ms, archived_at_ms
             FROM conversations
             WHERE archived_at_ms IS NULL
             ORDER BY updated_at_ms DESC
@@ -211,6 +216,7 @@ impl Db {
               c.id,
               c.project_id,
               c.title,
+              c.tool,
               c.created_at_ms,
               c.updated_at_ms,
               c.archived_at_ms,
@@ -231,7 +237,7 @@ impl Db {
     pub async fn get_conversation(&self, conversation_id: Uuid) -> anyhow::Result<Conversation> {
         let row = sqlx::query_as::<_, ConversationRow>(
             r#"
-            SELECT id, project_id, title, created_at_ms, updated_at_ms, archived_at_ms
+            SELECT id, project_id, title, tool, created_at_ms, updated_at_ms, archived_at_ms
             FROM conversations
             WHERE id = ?1
             "#,
@@ -249,7 +255,7 @@ impl Db {
     ) -> anyhow::Result<Option<Conversation>> {
         let row = sqlx::query_as::<_, ConversationRow>(
             r#"
-            SELECT id, project_id, title, created_at_ms, updated_at_ms, archived_at_ms
+            SELECT id, project_id, title, tool, created_at_ms, updated_at_ms, archived_at_ms
             FROM conversations
             WHERE id = ?1
             "#,
@@ -383,7 +389,7 @@ impl Db {
     pub async fn get_run(&self, conversation_id: Uuid) -> anyhow::Result<Run> {
         let row = sqlx::query_as::<_, RunRow>(
             r#"
-            SELECT conversation_id, status, started_at_ms, ended_at_ms, codex_session_id, active_pid, metadata_json, updated_at_ms
+            SELECT conversation_id, status, started_at_ms, ended_at_ms, tool_session_id, active_pid, metadata_json, updated_at_ms
             FROM runs
             WHERE conversation_id = ?1
             "#,
@@ -440,7 +446,7 @@ impl Db {
         &self,
         conversation_id: Uuid,
         status: RunStatus,
-        codex_session_id: Option<&str>,
+        tool_session_id: Option<&str>,
         active_pid: Option<i64>,
     ) -> anyhow::Result<()> {
         let now = now_ms();
@@ -451,7 +457,7 @@ impl Db {
             SET status = ?2,
                 ended_at_ms = ?3,
                 updated_at_ms = ?3,
-                codex_session_id = COALESCE(?4, codex_session_id),
+                tool_session_id = COALESCE(?4, tool_session_id),
                 active_pid = ?5
             WHERE conversation_id = ?1
             "#,
@@ -459,7 +465,7 @@ impl Db {
         .bind(conversation_id.to_string())
         .bind(status_str)
         .bind(now)
-        .bind(codex_session_id)
+        .bind(tool_session_id)
         .bind(active_pid)
         .execute(&self.pool)
         .await
@@ -645,6 +651,7 @@ pub struct Conversation {
     pub id: Uuid,
     pub project_id: Option<Uuid>,
     pub title: String,
+    pub tool: ToolKind,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub archived_at_ms: Option<i64>,
@@ -715,7 +722,7 @@ pub struct Run {
     pub status: RunStatus,
     pub started_at_ms: Option<i64>,
     pub ended_at_ms: Option<i64>,
-    pub codex_session_id: Option<String>,
+    pub tool_session_id: Option<String>,
     pub active_pid: Option<i64>,
     pub metadata: Value,
     pub updated_at_ms: i64,
@@ -790,6 +797,7 @@ struct ConversationRow {
     id: String,
     project_id: Option<String>,
     title: String,
+    tool: String,
     created_at_ms: i64,
     updated_at_ms: i64,
     archived_at_ms: Option<i64>,
@@ -800,6 +808,7 @@ struct ConversationListRow {
     id: String,
     project_id: Option<String>,
     title: String,
+    tool: String,
     created_at_ms: i64,
     updated_at_ms: i64,
     archived_at_ms: Option<i64>,
@@ -815,6 +824,7 @@ impl From<ConversationRow> for Conversation {
                 .and_then(|p| Uuid::parse_str(&p).ok())
                 .filter(|p| !p.is_nil()),
             title: row.title,
+            tool: row.tool.parse().unwrap_or_default(),
             created_at_ms: row.created_at_ms,
             updated_at_ms: row.updated_at_ms,
             archived_at_ms: row.archived_at_ms,
@@ -830,6 +840,7 @@ impl From<ConversationListRow> for ConversationListItem {
             .unwrap_or("idle")
             .parse()
             .unwrap_or(RunStatus::Idle);
+        let tool: ToolKind = row.tool.parse().unwrap_or_default();
 
         Self {
             conversation: Conversation {
@@ -839,6 +850,7 @@ impl From<ConversationListRow> for ConversationListItem {
                     .and_then(|p| Uuid::parse_str(&p).ok())
                     .filter(|p| !p.is_nil()),
                 title: row.title,
+                tool,
                 created_at_ms: row.created_at_ms,
                 updated_at_ms: row.updated_at_ms,
                 archived_at_ms: row.archived_at_ms,
@@ -882,7 +894,7 @@ struct RunRow {
     status: String,
     started_at_ms: Option<i64>,
     ended_at_ms: Option<i64>,
-    codex_session_id: Option<String>,
+    tool_session_id: Option<String>,
     active_pid: Option<i64>,
     metadata_json: String,
     updated_at_ms: i64,
@@ -900,7 +912,7 @@ impl TryFrom<RunRow> for Run {
             status,
             started_at_ms: row.started_at_ms,
             ended_at_ms: row.ended_at_ms,
-            codex_session_id: row.codex_session_id,
+            tool_session_id: row.tool_session_id,
             active_pid: row.active_pid,
             metadata,
             updated_at_ms: row.updated_at_ms,
@@ -977,11 +989,12 @@ mod tests {
         assert_eq!(projects[0].id, project.id);
 
         let conversation = db
-            .create_conversation(Some(project.id), "Test Conversation")
+            .create_conversation(Some(project.id), "Test Conversation", ToolKind::Codex)
             .await?;
         let conversations = db.list_conversations().await?;
         assert_eq!(conversations.len(), 1);
         assert_eq!(conversations[0].id, conversation.id);
+        assert_eq!(conversations[0].tool, ToolKind::Codex);
 
         let e1 = db
             .append_event(
@@ -1016,7 +1029,9 @@ mod tests {
         let db = Db::connect(&db_path).await?;
 
         let project = db.create_project("p", temp_dir.path()).await?;
-        let conversation = db.create_conversation(Some(project.id), "c").await?;
+        let conversation = db
+            .create_conversation(Some(project.id), "c", ToolKind::Codex)
+            .await?;
 
         let req = db
             .create_interaction_request(
@@ -1039,6 +1054,23 @@ mod tests {
 
         let pending = db.list_pending_interactions(conversation.id).await?;
         assert_eq!(pending.len(), 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn create_conversation_persists_tool() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir().context("create temp dir")?;
+        let db_path = temp_dir.path().join("codex-web-test-conversation-tool.sqlite3");
+        let db = Db::connect(&db_path).await?;
+
+        let project = db.create_project("p", temp_dir.path()).await?;
+        let conversation = db
+            .create_conversation(Some(project.id), "c", ToolKind::ClaudeCode)
+            .await?;
+
+        let fetched = db.get_conversation(conversation.id).await?;
+        assert_eq!(fetched.tool, ToolKind::ClaudeCode);
 
         Ok(())
     }
