@@ -581,6 +581,16 @@ body {
   flex: 0 0 auto;
 }
 
+.micButton {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+}
+
+.micButtonActive {
+  border-color: rgba(255, 60, 60, 0.55);
+  background: rgba(255, 60, 60, 0.12);
+}
+
 .composerField:focus-within {
   border-color: rgba(0, 120, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(0, 120, 255, 0.15);

@@ -26,6 +26,12 @@ import {
   updateConversation,
   wsBase,
 } from "./lib/api";
+import {
+  SpeechRecognitionLike,
+  getSpeechRecognitionConstructor,
+  isSpeechRecognitionSupported,
+  speechErrorMessage,
+} from "./lib/speech";
 
 export type ChatItem = {
   key: string;
@@ -581,6 +587,10 @@ export default function App() {
 
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [speechSupported] = useState(() =>
+    typeof window === "undefined" ? false : isSpeechRecognitionSupported(window),
+  );
+  const [isDictating, setIsDictating] = useState(false);
 
   const items = useMemo(() => eventsToChatItems(events, { showRawMessages }), [events, showRawMessages]);
   const activeConversation = useMemo(
@@ -595,6 +605,9 @@ export default function App() {
   const reconnectTimerRef = useRef<number | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const lastEventIdRef = useRef<number>(0);
+  const speechRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechBaseTextRef = useRef<string>("");
+  const speechFinalTextRef = useRef<string>("");
 
   function enterLogin(opts: { hadToken: boolean; message: string }) {
     // Clear any persisted token to prevent background polling loops.
@@ -679,6 +692,16 @@ export default function App() {
   useEffect(() => {
     lastEventIdRef.current = events.at(-1)?.id ?? 0;
   }, [events]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        speechRef.current?.abort();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (authStatus !== "ok") return;
@@ -916,11 +939,95 @@ export default function App() {
     }
   }
 
+  function stopDictation() {
+    try {
+      speechRef.current?.stop();
+    } catch {
+      // ignore
+    }
+  }
+
+  function toggleDictation() {
+    if (!speechSupported || typeof window === "undefined") {
+      setError("Voice input is not supported in this browser.");
+      return;
+    }
+
+    if (isDictating) {
+      stopDictation();
+      return;
+    }
+
+    const Ctor = getSpeechRecognitionConstructor(window);
+    if (!Ctor) {
+      setError("Voice input is not supported in this browser.");
+      return;
+    }
+
+    let recognizer: SpeechRecognitionLike | null = null;
+    try {
+      recognizer = new Ctor();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    speechBaseTextRef.current = messageText.trimEnd();
+    speechFinalTextRef.current = "";
+
+    recognizer.lang = typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
+    recognizer.continuous = false;
+    recognizer.interimResults = true;
+    recognizer.onresult = (event: unknown) => {
+      const e = event as { results?: unknown; resultIndex?: unknown } | null;
+      const results = (e?.results as ArrayLike<unknown> | undefined) ?? undefined;
+      const startIndex = typeof e?.resultIndex === "number" ? e.resultIndex : 0;
+
+      let interim = "";
+      if (results) {
+        for (let i = startIndex; i < results.length; i++) {
+          const res = results[i] as { isFinal?: unknown; 0?: unknown } | null;
+          const transcript = (res?.[0] as { transcript?: unknown } | null)?.transcript;
+          if (typeof transcript !== "string" || !transcript) continue;
+          if (res?.isFinal) {
+            speechFinalTextRef.current += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+      }
+
+      const base = speechBaseTextRef.current.trim();
+      const finalText = speechFinalTextRef.current.trim();
+      const interimText = interim.trim();
+      const parts = [base, finalText, interimText].filter(Boolean);
+      setMessageText(parts.join(" "));
+    };
+    recognizer.onerror = (event: unknown) => {
+      setError(`Voice input error: ${speechErrorMessage(event)}`);
+    };
+    recognizer.onend = () => {
+      setIsDictating(false);
+      speechRef.current = null;
+    };
+
+    speechRef.current = recognizer;
+    setIsDictating(true);
+    try {
+      recognizer.start();
+    } catch (err: unknown) {
+      setIsDictating(false);
+      speechRef.current = null;
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function onSendMessage(e: FormEvent) {
     e.preventDefault();
     if (!activeConversationId) return;
     if (!messageText.trim()) return;
     if (isConversationRunning) return;
+    if (isDictating) stopDictation();
     setError(null);
     setIsSending(true);
     const previousRunStatus = activeConversation?.run_status ?? null;
@@ -1275,13 +1382,30 @@ export default function App() {
               onChange={(e) => setMessageText(e.target.value)}
               className="composerInput"
               placeholder={activeConversationId ? "Send a message…" : "Create/select a conversation first"}
-              disabled={!activeConversationId || isSending || isConversationRunning}
+              disabled={!activeConversationId || isSending || isConversationRunning || isDictating}
             />
+            {speechSupported ? (
+              <button
+                className={isDictating ? "button iconButton micButton micButtonActive" : "button iconButton micButton"}
+                type="button"
+                onClick={toggleDictation}
+                disabled={!activeConversationId || isSending || isConversationRunning}
+                aria-label={isDictating ? "Stop voice input" : "Start voice input"}
+                title={isDictating ? "Stop voice input" : "Start voice input"}
+              >
+                <svg viewBox="0 0 24 24" className="icon" aria-hidden="true">
+                  <path
+                    d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            ) : null}
           </div>
           <button
             className="button"
             type="submit"
-            disabled={!activeConversationId || isSending || isConversationRunning}
+            disabled={!activeConversationId || isSending || isConversationRunning || isDictating}
           >
             Send
           </button>
