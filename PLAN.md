@@ -320,6 +320,7 @@ Given this repo is Rust-only today, prefer **Option 1** initially to maximize UI
 - [x] Move logout icon to top-right header
 - [x] Make layout mobile responsive (sidebar drawer)
 - [x] Add Web Speech voice input in composer
+- [x] Make new conversation modal responsive on small screens
 - [x] Render run_status as Start/Stop splitters; hide raw run_status unless raw enabled
 - [x] Style agent_message bubbles with thicker border
 - [x] Show token usage in chat header from turn.completed usage

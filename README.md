@@ -54,6 +54,7 @@ UI tips:
 - If the daemon is started with `--auth-token` / `CODEX_WEB_AUTH_TOKEN`, the UI shows a login screen on startup to enter the token.
 - On smaller screens, use the top-left menu button to open the conversation list.
 - On supported browsers, the composer has a microphone button for voice input (Web Speech API).
+- On mobile-sized screens, “New conversation…” opens as a full-screen modal so the directory picker is usable.
 
 ## Single-binary UI (bundled assets)
 
