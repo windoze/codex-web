@@ -55,6 +55,20 @@ export type FsListResponse = {
   entries: FsEntry[];
 };
 
+export class HttpError extends Error {
+  status: number;
+  statusText: string;
+  bodyText: string;
+
+  constructor(status: number, statusText: string, bodyText: string) {
+    super(`HTTP ${status} ${statusText}: ${bodyText}`);
+    this.name = "HttpError";
+    this.status = status;
+    this.statusText = statusText;
+    this.bodyText = bodyText;
+  }
+}
+
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";
 const AUTH_TOKEN_STORAGE_KEY = "codex_web_auth_token";
 
@@ -111,7 +125,7 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+    throw new HttpError(res.status, res.statusText, text);
   }
   return (await res.json()) as T;
 }

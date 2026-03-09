@@ -5,6 +5,7 @@ import {
   Conversation,
   ConversationListItem,
   ConversationEvent,
+  HttpError,
   InteractionRequest,
   Project,
   FsEntry,
@@ -550,8 +551,11 @@ export function eventsToChatItems(
 }
 
 export default function App() {
-  const [authTokenSaved, setAuthTokenSaved] = useState<string>(() => getAuthToken() ?? "");
-  const [authTokenDraft, setAuthTokenDraft] = useState<string>(() => getAuthToken() ?? "");
+  const [authToken, setAuthTokenState] = useState<string>(() => getAuthToken() ?? "");
+  const [authStatus, setAuthStatus] = useState<"checking" | "ok" | "needs_login">("checking");
+  const [loginTokenDraft, setLoginTokenDraft] = useState<string>(() => getAuthToken() ?? "");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -591,7 +595,56 @@ export default function App() {
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const lastEventIdRef = useRef<number>(0);
 
+  function enterLogin(opts: { hadToken: boolean; message: string }) {
+    // Clear any persisted token to prevent background polling loops.
+    clearAuthToken();
+    setAuthTokenState("");
+    setAuthStatus("needs_login");
+    setLoginError(opts.hadToken ? `Auth token rejected. ${opts.message}` : opts.message);
+
+    // Clear app state so the login screen is all the user sees.
+    setConversations([]);
+    setProjects([]);
+    setActiveConversationId(null);
+    setEvents([]);
+    setPendingInteractions([]);
+  }
+
+  async function bootstrap() {
+    setError(null);
+    setLoginError(null);
+    setAuthStatus("checking");
+
+    const currentToken = getAuthToken() ?? "";
+    const hadToken = Boolean(currentToken.trim());
+
+    try {
+      const [list, projectList] = await Promise.all([listConversations(), listProjects()]);
+      setAuthTokenState(currentToken);
+      setConversations(list);
+      setProjects(projectList);
+      setActiveConversationId((prev) => {
+        if (!prev) return list[0]?.id ?? null;
+        if (list.some((c) => c.id === prev)) return prev;
+        return list[0]?.id ?? null;
+      });
+      setAuthStatus("ok");
+    } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken, message: "This server requires an auth token." });
+        return;
+      }
+      setError(err instanceof Error ? err.message : String(err));
+      setAuthStatus("ok");
+    }
+  }
+
   useEffect(() => {
+    bootstrap().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(() => {
+    if (authStatus !== "ok") return;
     let cancelled = false;
 
     async function refreshConversations() {
@@ -604,50 +657,30 @@ export default function App() {
           if (list.some((c) => c.id === prev)) return prev;
           return list[0]?.id ?? null;
         });
-      } catch {
-        // ignore (polling should not spam errors)
+      } catch (err: unknown) {
+        if (err instanceof HttpError && err.status === 401) {
+          enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        }
       }
     }
-
-    Promise.all([listConversations(), listProjects()])
-      .then(([list, projectList]) => {
-        if (cancelled) return;
-        setConversations(list);
-        setProjects(projectList);
-        setActiveConversationId((prev) => prev ?? list[0]?.id ?? null);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
 
     // Keep the left-pane run indicators reasonably fresh even when the active conversation changes.
     refreshConversations().catch(() => {});
     const timer = window.setInterval(() => {
       refreshConversations().catch(() => {});
     }, 2000);
-
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
-
-  useEffect(() => {
-    // When the auth token changes, refresh projects so conversation titles can resolve project basenames.
-    let cancelled = false;
-    listProjects()
-      .then((projectList) => {
-        if (!cancelled) setProjects(projectList);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [authTokenSaved]);
+  }, [authStatus]);
 
   useEffect(() => {
     lastEventIdRef.current = events.at(-1)?.id ?? 0;
   }, [events]);
 
   useEffect(() => {
+    if (authStatus !== "ok") return;
     if (!activeConversationId) return;
 
     const conversationId = activeConversationId;
@@ -685,12 +718,16 @@ export default function App() {
         const missed = await listEvents(conversationId, lastEventIdRef.current);
         if (cancelled) return;
         mergeEvents(missed);
-      } catch {
+      } catch (err: unknown) {
+        if (err instanceof HttpError && err.status === 401) {
+          enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+          return;
+        }
         // ignore; WebSocket may still work
       }
 
       const params = new URLSearchParams({ conversation_id: conversationId });
-      const token = authTokenSaved.trim();
+      const token = authToken.trim();
       if (token) params.set("token", token);
       const url = `${wsBase()}/ws?${params.toString()}`;
       const ws = new WebSocket(url);
@@ -735,7 +772,13 @@ export default function App() {
         }
         connectWs().catch(() => {});
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((err: unknown) => {
+        if (err instanceof HttpError && err.status === 401) {
+          enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+          return;
+        }
+        setError(err instanceof Error ? err.message : String(err));
+      });
 
     return () => {
       cancelled = true;
@@ -748,9 +791,13 @@ export default function App() {
         reconnectTimerRef.current = null;
       }
     };
-  }, [activeConversationId, authTokenSaved]);
+  }, [activeConversationId, authToken, authStatus]);
 
   useEffect(() => {
+    if (authStatus !== "ok") {
+      setPendingInteractions([]);
+      return;
+    }
     if (!activeConversationId) {
       setPendingInteractions([]);
       return;
@@ -763,7 +810,11 @@ export default function App() {
       try {
         const pending = await listPendingInteractions(conversationId);
         if (!cancelled) setPendingInteractions(pending);
-      } catch {
+      } catch (err: unknown) {
+        if (err instanceof HttpError && err.status === 401) {
+          enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+          return;
+        }
         // ignore
       }
     }
@@ -777,7 +828,7 @@ export default function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeConversationId]);
+  }, [activeConversationId, authStatus]);
 
   useEffect(() => {
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight });
@@ -797,6 +848,10 @@ export default function App() {
       setPickerParent(res.parent);
       setPickerEntries(res.entries);
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setPickerError(err instanceof Error ? err.message : String(err));
     } finally {
       setPickerLoading(false);
@@ -815,6 +870,10 @@ export default function App() {
       setHomePath(home.path);
       await loadPickerPath(home.path);
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setPickerError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -841,6 +900,10 @@ export default function App() {
       setMessageText("");
       setNewConversationOpen(false);
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setPickerError(err instanceof Error ? err.message : String(err));
     } finally {
       setNewConversationCreating(false);
@@ -860,6 +923,10 @@ export default function App() {
       await postUserMessage(activeConversationId, messageText);
       setMessageText("");
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
       try {
         const list = await listConversations();
@@ -885,6 +952,10 @@ export default function App() {
         setPendingInteractions(pending);
       }
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -900,6 +971,10 @@ export default function App() {
       const list = await listConversations();
       setConversations(list);
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -915,30 +990,93 @@ export default function App() {
       setActiveConversationId(list[0]?.id ?? null);
       setEvents([]);
     } catch (err: unknown) {
+      if (err instanceof HttpError && err.status === 401) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  function onSaveAuthToken(e: FormEvent) {
+  async function onLogin(e: FormEvent) {
     e.preventDefault();
-    const trimmed = authTokenDraft.trim();
+    const trimmed = loginTokenDraft.trim();
     if (!trimmed) {
-      clearAuthToken();
-      setAuthTokenSaved("");
-      setAuthTokenDraft("");
-      setError(null);
+      setLoginError("Auth token is required.");
       return;
     }
+    setLoginBusy(true);
+    setLoginError(null);
+    setError(null);
     setAuthToken(trimmed);
-    setAuthTokenSaved(trimmed);
+    setAuthTokenState(trimmed);
+    try {
+      await bootstrap();
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  function onClearLoginToken() {
+    clearAuthToken();
+    setAuthTokenState("");
+    setLoginTokenDraft("");
+    setLoginError(null);
     setError(null);
   }
 
-  function onClearAuthToken() {
-    clearAuthToken();
-    setAuthTokenSaved("");
-    setAuthTokenDraft("");
-    setError(null);
+  async function onLogout() {
+    onClearLoginToken();
+    await bootstrap();
+  }
+
+  if (authStatus === "checking") {
+    return (
+      <div className="loginPage">
+        <div className="loginCard">
+          <div className="brand">codex-web</div>
+          <div className="muted">API: {apiBase()}</div>
+          <div className="loginStatus">
+            <span className="spinner" aria-label="Connecting" title="Connecting" /> Connecting…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (authStatus === "needs_login") {
+    return (
+      <div className="loginPage">
+        <div className="loginCard">
+          <div className="brand">codex-web</div>
+          <div className="muted">API: {apiBase()}</div>
+          <div className="loginTitle">Login</div>
+          {loginError ? <div className="loginError">{loginError}</div> : null}
+          <form className="loginForm" onSubmit={onLogin}>
+            <input
+              className="input"
+              type="password"
+              value={loginTokenDraft}
+              onChange={(e) => setLoginTokenDraft(e.target.value)}
+              placeholder="Auth token"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              disabled={loginBusy}
+            />
+            <div className="loginActions">
+              <button className="button" type="submit" disabled={loginBusy}>
+                {loginBusy ? "Connecting…" : "Connect"}
+              </button>
+              <button className="button" type="button" onClick={onClearLoginToken} disabled={loginBusy}>
+                Clear
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -947,25 +1085,11 @@ export default function App() {
         <div className="sidebarHeader">
           <div className="brand">codex-web</div>
           <div className="muted">API: {apiBase()}</div>
-          <form className="authRow" onSubmit={onSaveAuthToken}>
-            <input
-              className="input authInput"
-              type="password"
-              value={authTokenDraft}
-              onChange={(e) => setAuthTokenDraft(e.target.value)}
-              placeholder="Auth token (optional)"
-              spellCheck={false}
-              autoCapitalize="none"
-              autoComplete="off"
-              autoCorrect="off"
-            />
-            <button className="button buttonSmall" type="submit" title="Apply token">
-              Apply
+          {authToken ? (
+            <button className="button buttonSmall loginLogout" type="button" onClick={onLogout}>
+              Log out
             </button>
-            <button className="button buttonSmall" type="button" onClick={onClearAuthToken} title="Clear token">
-              Clear
-            </button>
-          </form>
+          ) : null}
         </div>
 
         <button className="newConversationRow" type="button" onClick={() => openNewConversationDialog()}>

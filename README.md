@@ -51,6 +51,7 @@ In the UI, click “New conversation…” to pick a project directory (the pick
 
 UI tips:
 - Message bubbles are collapsible. `agent_message` and user bubbles start expanded; other bubbles start collapsed. Click the triangle to expand/collapse.
+- If the daemon is started with `--auth-token` / `CODEX_WEB_AUTH_TOKEN`, the UI shows a login screen on startup to enter the token.
 
 ## Single-binary UI (bundled assets)
 

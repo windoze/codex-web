@@ -26,18 +26,8 @@ body {
   border-bottom: 1px solid rgba(127, 127, 127, 0.25);
 }
 
-.authRow {
+.loginLogout {
   margin-top: 10px;
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.authInput {
-  padding: 8px 10px;
-  border-radius: 10px;
-  font-size: 12px;
 }
 
 .brand {
@@ -49,6 +39,57 @@ body {
 .muted {
   opacity: 0.75;
   font-size: 12px;
+}
+
+.loginPage {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.loginCard {
+  width: min(440px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  padding: 16px;
+  background: rgba(127, 127, 127, 0.06);
+  display: grid;
+  gap: 10px;
+}
+
+.loginTitle {
+  font-weight: 700;
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.loginError {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 0, 0, 0.25);
+  background: rgba(255, 0, 0, 0.10);
+  font-size: 13px;
+}
+
+.loginForm {
+  display: grid;
+  gap: 10px;
+}
+
+.loginActions {
+  display: flex;
+  gap: 10px;
+}
+
+.loginStatus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 8px;
 }
 
 .sectionTitle {
