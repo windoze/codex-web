@@ -66,7 +66,19 @@ export class HttpError extends Error {
     this.status = status;
     this.statusText = statusText;
     this.bodyText = bodyText;
+    // Ensure instanceof works reliably across browsers/transpilation targets.
+    Object.setPrototypeOf(this, HttpError.prototype);
   }
+}
+
+export function httpStatusFromUnknown(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" ? status : null;
+}
+
+export function isUnauthorizedError(err: unknown): boolean {
+  return httpStatusFromUnknown(err) === 401;
 }
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";

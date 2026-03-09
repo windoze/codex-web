@@ -5,7 +5,6 @@ import {
   Conversation,
   ConversationListItem,
   ConversationEvent,
-  HttpError,
   InteractionRequest,
   Project,
   FsEntry,
@@ -14,6 +13,7 @@ import {
   createConversation,
   createProject,
   getAuthToken,
+  isUnauthorizedError,
   listConversations,
   listEvents,
   listProjects,
@@ -644,7 +644,7 @@ export default function App() {
       });
       setAuthStatus("ok");
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken, message: "This server requires an auth token." });
         return;
       }
@@ -672,7 +672,7 @@ export default function App() {
           return list[0]?.id ?? null;
         });
       } catch (err: unknown) {
-        if (err instanceof HttpError && err.status === 401) {
+        if (isUnauthorizedError(err)) {
           enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         }
       }
@@ -743,7 +743,7 @@ export default function App() {
         if (cancelled) return;
         mergeEvents(missed);
       } catch (err: unknown) {
-        if (err instanceof HttpError && err.status === 401) {
+        if (isUnauthorizedError(err)) {
           enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
           return;
         }
@@ -797,7 +797,7 @@ export default function App() {
         connectWs().catch(() => {});
       })
       .catch((err: unknown) => {
-        if (err instanceof HttpError && err.status === 401) {
+        if (isUnauthorizedError(err)) {
           enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
           return;
         }
@@ -835,7 +835,7 @@ export default function App() {
         const pending = await listPendingInteractions(conversationId);
         if (!cancelled) setPendingInteractions(pending);
       } catch (err: unknown) {
-        if (err instanceof HttpError && err.status === 401) {
+        if (isUnauthorizedError(err)) {
           enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
           return;
         }
@@ -877,7 +877,7 @@ export default function App() {
       setPickerParent(res.parent);
       setPickerEntries(res.entries);
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
@@ -899,7 +899,7 @@ export default function App() {
       setHomePath(home.path);
       await loadPickerPath(home.path);
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
@@ -929,7 +929,7 @@ export default function App() {
       setMessageText("");
       setNewConversationOpen(false);
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
@@ -1036,7 +1036,7 @@ export default function App() {
       await postUserMessage(activeConversationId, messageText);
       setMessageText("");
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
@@ -1065,7 +1065,7 @@ export default function App() {
         setPendingInteractions(pending);
       }
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
@@ -1084,7 +1084,7 @@ export default function App() {
       const list = await listConversations();
       setConversations(list);
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
@@ -1103,7 +1103,7 @@ export default function App() {
       setActiveConversationId(list[0]?.id ?? null);
       setEvents([]);
     } catch (err: unknown) {
-      if (err instanceof HttpError && err.status === 401) {
+      if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
