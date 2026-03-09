@@ -53,7 +53,8 @@ VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 If you serve the UI from the daemon (via `--static-dir` or the `bundled-ui` feature), the UI defaults to
 using the current page origin as its API base (so mobile devices work without rebuilding).
 
-In the UI, click “New conversation…” to pick a project directory (the picker starts at your home directory).
+In the UI, click “New conversation…” to pick a project directory (the picker starts at your home directory) and select
+which assistant backend to use (Codex or Claude Code).
 
 UI tips:
 - Message bubbles are collapsible. `agent_message` and user bubbles start expanded; other bubbles start collapsed. Click the triangle to expand/collapse.

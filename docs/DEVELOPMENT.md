@@ -73,7 +73,6 @@ Expected:
      `CODEX_WEB_CLAUDE_CODE_BIN=./scripts/claude-code-bridge-demo.sh`.
 2. Start the daemon and UI.
 3. Create a conversation with `tool = claude-code`.
-   - Note: if the UI doesn’t expose a tool selector yet, create it via `POST /api/conversations` (see `docs/API.md`).
 4. Send a message.
 
 Expected:

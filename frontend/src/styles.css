@@ -231,6 +231,31 @@ body {
   overflow: hidden;
 }
 
+.toolBadge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  background: rgba(127, 127, 127, 0.08);
+  opacity: 0.9;
+  user-select: none;
+}
+
+.toolBadgeCodex {
+  border-color: rgba(0, 120, 255, 0.35);
+  background: rgba(0, 120, 255, 0.12);
+  color: rgba(0, 120, 255, 0.95);
+}
+
+.toolBadgeClaude {
+  border-color: rgba(160, 70, 255, 0.35);
+  background: rgba(160, 70, 255, 0.12);
+  color: rgba(160, 70, 255, 0.95);
+}
+
 .conversationSpinner {
   flex: 0 0 auto;
   border-color: rgba(0, 120, 255, 0.8);
@@ -276,6 +301,13 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
+}
+
+.chatTitleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chatStatus {

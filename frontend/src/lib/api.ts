@@ -1,5 +1,7 @@
 export type Uuid = string;
 
+export type ConversationTool = "codex" | "claude-code";
+
 export type Project = {
   id: Uuid;
   name: string;
@@ -12,6 +14,7 @@ export type Conversation = {
   id: Uuid;
   project_id: Uuid | null;
   title: string;
+  tool: ConversationTool;
   created_at_ms: number;
   updated_at_ms: number;
   archived_at_ms: number | null;
@@ -173,10 +176,14 @@ export function createProject(rootPath: string, name?: string): Promise<Project>
   });
 }
 
-export function createConversation(projectId: Uuid | null, title?: string): Promise<Conversation> {
+export function createConversation(
+  projectId: Uuid | null,
+  title?: string,
+  tool?: ConversationTool,
+): Promise<Conversation> {
   return jsonFetch<Conversation>("/api/conversations", {
     method: "POST",
-    body: JSON.stringify({ project_id: projectId, title }),
+    body: JSON.stringify({ project_id: projectId, title, tool }),
   });
 }
 

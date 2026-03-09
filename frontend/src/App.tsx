@@ -5,6 +5,7 @@ import {
   Conversation,
   ConversationListItem,
   ConversationEvent,
+  ConversationTool,
   InteractionRequest,
   Project,
   FsEntry,
@@ -56,6 +57,24 @@ export function bubbleStartsExpanded(item: Pick<ChatItem, "kind" | "role">): boo
   // User messages should remain visible by default (they are the prompt/context).
   if (item.role === "user") return true;
   return item.kind === "agent_message";
+}
+
+function toolLabel(tool: ConversationTool): string {
+  return tool === "codex" ? "Codex" : "Claude Code";
+}
+
+function toolShortLabel(tool: ConversationTool): string {
+  return tool === "codex" ? "CX" : "CL";
+}
+
+function ToolBadge({ tool }: { tool: ConversationTool }) {
+  const cls = tool === "codex" ? "toolBadge toolBadgeCodex" : "toolBadge toolBadgeClaude";
+  const label = toolLabel(tool);
+  return (
+    <span className={cls} aria-label={`Uses ${label}`} title={`Uses ${label}`}>
+      {toolShortLabel(tool)}
+    </span>
+  );
 }
 
 export function deriveRunStatusFromEvents(events: ConversationEvent[]): string | null {
@@ -442,6 +461,65 @@ export function eventsToChatItems(
       continue;
     }
 
+    if (e.event_type === "claude_event") {
+      if (opts.showRawMessages) {
+        out.push({
+          key: `e-${e.id}`,
+          role: "event",
+          text: `claude_event: ${JSON.stringify(e.payload)}`,
+          format: "pre",
+        });
+        continue;
+      }
+
+      const payload = e.payload as Record<string, unknown> | null;
+      const claudeType = payload?.type;
+
+      if (claudeType === "assistant_message_delta") {
+        const delta = payload?.delta;
+        const messageId = payload?.message_id;
+        if (typeof delta === "string") {
+          const id = typeof messageId === "string" ? `claude:${messageId}` : null;
+          if (activeStreamIndex == null || (id != null && id !== activeStreamItemId)) {
+            out.push({
+              key: `claude-stream-${id ?? e.id}`,
+              role: "assistant",
+              text: "",
+              format: "markdown",
+              tone: "normal",
+              kind: "agent_message",
+            });
+            activeStreamIndex = out.length - 1;
+            activeStreamItemId = id;
+          }
+          out[activeStreamIndex].text += delta;
+          continue;
+        }
+      }
+
+      if (claudeType === "assistant_message" || claudeType === "assistant_message_completed") {
+        const text = payload?.text;
+        if (typeof text === "string" && text) {
+          const next = events[i + 1];
+          if (next?.event_type === "agent_message") {
+            continue;
+          }
+          out.push({
+            key: `e-${e.id}`,
+            role: "assistant",
+            text,
+            format: "markdown",
+            tone: "normal",
+            kind: "agent_message",
+          });
+          continue;
+        }
+      }
+
+      // Default: hide claude raw events when the raw toggle is off.
+      continue;
+    }
+
     if (e.event_type === "codex_event") {
       if (opts.showRawMessages) {
         out.push({
@@ -576,6 +654,14 @@ export default function App() {
 
   const [newConversationOpen, setNewConversationOpen] = useState(false);
   const [newConversationTitle, setNewConversationTitle] = useState("");
+  const [newConversationTool, setNewConversationTool] = useState<ConversationTool>(() => {
+    try {
+      const raw = typeof window === "undefined" ? null : window.localStorage.getItem("codex_web_new_conversation_tool");
+      return raw === "claude-code" || raw === "codex" ? raw : "codex";
+    } catch {
+      return "codex";
+    }
+  });
   const [newConversationCreating, setNewConversationCreating] = useState(false);
 
   const [pickerPath, setPickerPath] = useState<string | null>(null);
@@ -920,7 +1006,12 @@ export default function App() {
     try {
       const title = newConversationTitle.trim();
       const project = await createProject(pickerPath);
-      const conversation = await createConversation(project.id, title || undefined);
+      const conversation = await createConversation(project.id, title || undefined, newConversationTool);
+      try {
+        window.localStorage.setItem("codex_web_new_conversation_tool", newConversationTool);
+      } catch {
+        // ignore
+      }
 
       const [nextConversations, nextProjects] = await Promise.all([listConversations(), listProjects()]);
       setConversations(nextConversations);
@@ -1241,6 +1332,7 @@ export default function App() {
                   {isTurnInProgress(c.run_status) || (c.id === activeConversationId && isConversationRunning) ? (
                     <span className="spinner conversationSpinner" aria-label="Turn in progress" title="Turn in progress" />
                   ) : null}
+                  <ToolBadge tool={c.tool} />
                   <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
                 </div>
                 <div className="conversationTime">{formatUpdatedAt(c.updated_at_ms)}</div>
@@ -1273,9 +1365,12 @@ export default function App() {
               </svg>
             </button>
             <div className="chatTitle">
-              {activeConversation
-                ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
-                : "No conversation"}
+              {activeConversation ? <ToolBadge tool={activeConversation.tool} /> : null}
+              <span className="chatTitleText">
+                {activeConversation
+                  ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
+                  : "No conversation"}
+              </span>
               {tokenUsage ? (
                 <span className="tokenUsage">
                   ({tokenUsage.cached_input_tokens} cached tokens, {tokenUsage.input_tokens} input tokens,{" "}
@@ -1430,6 +1525,27 @@ export default function App() {
 
             <div className="modalBody">
               {pickerError ? <div className="modalError">{pickerError}</div> : null}
+
+              <label className="field">
+                <div className="label">Assistant</div>
+                <select
+                  className="input"
+                  value={newConversationTool}
+                  onChange={(e) => {
+                    const next = e.target.value === "claude-code" ? "claude-code" : "codex";
+                    setNewConversationTool(next);
+                    try {
+                      window.localStorage.setItem("codex_web_new_conversation_tool", next);
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  disabled={newConversationCreating}
+                >
+                  <option value="codex">Codex</option>
+                  <option value="claude-code">Claude Code</option>
+                </select>
+              </label>
 
               <label className="field">
                 <div className="label">Conversation title (optional)</div>

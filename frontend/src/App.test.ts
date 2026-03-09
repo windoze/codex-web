@@ -35,6 +35,7 @@ describe("ui helpers", () => {
       id: "00000000-0000-0000-0000-000000000002",
       project_id: project.id,
       title: "New conversation",
+      tool: "codex",
       archived_at_ms: null,
       created_at_ms: 0,
       updated_at_ms: 0,
@@ -54,6 +55,7 @@ describe("ui helpers", () => {
       id: "00000000-0000-0000-0000-000000000002",
       project_id: project.id,
       title: "Bugfixes",
+      tool: "codex",
       archived_at_ms: null,
       created_at_ms: 0,
       updated_at_ms: 0,
@@ -146,6 +148,25 @@ describe("ui helpers", () => {
     expect(items[0].kind).toBe("agent_message");
   });
 
+  it("streams claude assistant_message_delta into a single assistant bubble", () => {
+    const events = [
+      e(1, "claude_event", { type: "assistant_message_delta", delta: "hel" }),
+      e(2, "claude_event", { type: "assistant_message_delta", delta: "lo" }),
+    ];
+    const items = eventsToChatItems(events, { showRawMessages: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].role).toBe("assistant");
+    expect(items[0].text).toBe("hello");
+    expect(items[0].kind).toBe("agent_message");
+  });
+
+  it("shows raw claude JSON when raw toggle is on", () => {
+    const events = [e(1, "claude_event", { type: "session_configured", session_id: "sess" })];
+    const items = eventsToChatItems(events, { showRawMessages: true });
+    expect(items[0].text).toContain("claude_event:");
+    expect(items[0].text).toContain("session_configured");
+  });
+
   it("tags agent_message events for styling", () => {
     const events = [e(1, "agent_message", { text: "hello" })];
     const items = eventsToChatItems(events, { showRawMessages: false });
@@ -224,6 +245,7 @@ describe("ui helpers", () => {
       id: "00000000-0000-0000-0000-000000000010",
       project_id: null,
       title: "A",
+      tool: "codex",
       archived_at_ms: null,
       created_at_ms: 0,
       updated_at_ms: 1,
@@ -233,6 +255,7 @@ describe("ui helpers", () => {
       id: "00000000-0000-0000-0000-000000000011",
       project_id: null,
       title: "B",
+      tool: "codex",
       archived_at_ms: null,
       created_at_ms: 0,
       updated_at_ms: 2,

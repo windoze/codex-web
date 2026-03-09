@@ -1,6 +1,6 @@
 # Claude Code support (plan)
 
-Status: **phases 1–3 implemented** (tool persisted; generalized session storage; runner abstraction; Claude runner MVP). UI work pending.
+Status: **phases 1–4 implemented** (tool persisted; runner abstraction; Claude runner MVP; UI tool selector + badges). Hardening pending.
 
 This document describes how to add **Claude Code** (referred to as `claude-code`) as an alternative
 execution backend alongside **Codex CLI** in `codex-web`.
@@ -346,11 +346,11 @@ Plan:
   - (See “Implemented contract” above for the current JSONL contract.)
 
 ### Phase 4: UI/UX changes
-- Add assistant selector to the New Conversation modal.
-- Add tool badge/icon in:
-  - conversation list
-  - conversation header/title
-- Ensure “send message” disables correctly during Claude runs (`run_status` parity).
+- ✅ Add assistant selector to the New Conversation modal.
+- ✅ Add tool badge/icon in:
+  - ✅ conversation list
+  - ✅ conversation header/title
+- ✅ Ensure “send message” disables correctly during Claude runs (`run_status` parity).
 
 ### Phase 5: Hardening
 - Tests:
@@ -371,7 +371,7 @@ Plan:
 - [x] Claude interactions appear in `/api/interactions/pending` and can be answered from terminal.
 
 ### Frontend
-- [ ] “New conversation…” offers `codex` vs `claude-code`.
-- [ ] Conversation list shows a tool badge/icon for every conversation.
-- [ ] Active conversation title/header shows the same badge/icon.
-- [ ] Claude conversations do not display Codex-specific UI in a broken way (no crashes).
+- [x] “New conversation…” offers `codex` vs `claude-code`.
+- [x] Conversation list shows a tool badge/icon for every conversation.
+- [x] Active conversation title/header shows the same badge/icon.
+- [x] Claude conversations do not display Codex-specific UI in a broken way (no crashes).
