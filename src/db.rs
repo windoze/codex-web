@@ -1076,6 +1076,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn interaction_first_response_wins() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir().context("create temp dir")?;
+        let db_path = temp_dir
+            .path()
+            .join("codex-web-test-interactions-first-wins.sqlite3");
+        let db = Db::connect(&db_path).await?;
+
+        let project = db.create_project("p", temp_dir.path()).await?;
+        let conversation = db
+            .create_conversation(Some(project.id), "c", ToolKind::Codex)
+            .await?;
+
+        let req = db
+            .create_interaction_request(
+                conversation.id,
+                "exec_approval_request",
+                &serde_json::json!({"call_id":"call_1","command":"echo hi"}),
+                10_000,
+                "decline",
+            )
+            .await?;
+
+        let first = db
+            .try_resolve_interaction(req.id, &serde_json::json!({"action":"accept"}), "t1")
+            .await?;
+        assert!(first, "expected first resolve to succeed");
+
+        let second = db
+            .try_resolve_interaction(req.id, &serde_json::json!({"action":"decline"}), "t2")
+            .await?;
+        assert!(!second, "expected second resolve to be rejected");
+
+        let fetched = db
+            .get_interaction_request(req.id)
+            .await?
+            .context("missing request")?;
+        assert_eq!(fetched.status, InteractionStatus::Resolved);
+        assert_eq!(fetched.resolved_by.as_deref(), Some("t1"));
+        assert_eq!(
+            fetched
+                .response
+                .as_ref()
+                .and_then(|v| v.get("action"))
+                .and_then(|v| v.as_str()),
+            Some("accept")
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn create_project_reuses_same_root_path() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir().context("create temp dir")?;
         let db_path = temp_dir.path().join("codex-web-test-project-dedup.sqlite3");

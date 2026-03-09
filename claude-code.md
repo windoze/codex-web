@@ -1,6 +1,6 @@
 # Claude Code support (plan)
 
-Status: **phases 1–4 implemented** (tool persisted; runner abstraction; Claude runner MVP; UI tool selector + badges). Hardening pending.
+Status: **phases 1–5 implemented** (tool persisted; runner abstraction; Claude runner MVP; UI tool selector + badges; hardening + tests).
 
 This document describes how to add **Claude Code** (referred to as `claude-code`) as an alternative
 execution backend alongside **Codex CLI** in `codex-web`.
@@ -354,10 +354,10 @@ Plan:
 
 ### Phase 5: Hardening
 - Tests:
-  - DB migration correctness (existing conversations default to Codex)
-  - UI rendering for mixed tool lists
-  - interaction response races (“first response wins”)
-- Better error surfaces when the Claude binary is missing/misconfigured.
+  - ✅ DB migration correctness (existing conversations default to Codex)
+  - ✅ UI rendering for mixed tool lists
+  - ✅ interaction response races (“first response wins”)
+- ✅ Better error surfaces when the Claude binary is missing/misconfigured (surface `run_status.error` in the UI).
 
 ---
 

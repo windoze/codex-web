@@ -187,6 +187,15 @@ describe("ui helpers", () => {
     expect(items.at(-1)?.text).toMatch(/^Stop: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
+  it("includes an error string for failed run_status splitters", () => {
+    const events = [e(1, "run_status", { status: "failed", error: "missing binary" }, 1_000)];
+    const items = eventsToChatItems(events, { showRawMessages: false });
+    expect(items).toHaveLength(1);
+    expect(items[0].format).toBe("splitter");
+    expect(items[0].text).toContain("failed");
+    expect(items[0].text).toContain("missing binary");
+  });
+
   it("renders run_status as raw pre text when raw is on", () => {
     const events = [e(1, "run_status", { status: "running" }, 0)];
     const items = eventsToChatItems(events, { showRawMessages: true });
@@ -265,6 +274,7 @@ describe("ui helpers", () => {
     const next = updateConversationListRunStatus([a, b], a.id, "running", 123);
     expect(next[0].run_status).toBe("running");
     expect(next[0].updated_at_ms).toBe(123);
+    expect(next[0].tool).toBe("codex");
     expect(next[1]).toEqual(b);
   });
 });

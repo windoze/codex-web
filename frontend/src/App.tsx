@@ -451,10 +451,15 @@ export function eventsToChatItems(
           format: "splitter",
         });
       } else if (statusStr === "failed" || statusStr === "aborted") {
+        const err = (e.payload as { error?: unknown } | null)?.error;
+        const errStr = typeof err === "string" && err.trim() ? err.trim() : null;
+        const errShort = errStr && errStr.length > 160 ? `${errStr.slice(0, 157)}…` : errStr;
         out.push({
           key: `e-${e.id}`,
           role: "event",
-          text: `Stop (${statusStr}): ${formatLocalTimestamp(e.ts_ms)}`,
+          text: errShort
+            ? `Stop (${statusStr}): ${formatLocalTimestamp(e.ts_ms)} — ${errShort}`
+            : `Stop (${statusStr}): ${formatLocalTimestamp(e.ts_ms)}`,
           format: "splitter",
         });
       }
