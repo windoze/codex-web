@@ -65,6 +65,29 @@ describe("ui helpers", () => {
     expect(conversationTitleForList(conversation, project)).toBe("Bugfixes");
   });
 
+  it("shows user@host:/path for SSH projects without title", () => {
+    const project: Project = {
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "remote-repo",
+      kind: "ssh",
+      root_path: "",
+      ssh_target: "alice@remote-host",
+      remote_root_path: "/home/alice/repo",
+      created_at_ms: 0,
+      updated_at_ms: 0,
+    };
+    const conversation: Conversation = {
+      id: "00000000-0000-0000-0000-000000000002",
+      project_id: project.id,
+      title: "New conversation",
+      tool: "codex",
+      archived_at_ms: null,
+      created_at_ms: 0,
+      updated_at_ms: 0,
+    };
+    expect(conversationTitleForList(conversation, project)).toBe("alice@remote-host:/home/alice/repo");
+  });
+
   it("extracts a basename for both unix and windows-ish paths", () => {
     expect(pathBasename("/a/b/c/")).toBe("c");
     expect(pathBasename("C:\\Users\\alice\\repo")).toBe("repo");

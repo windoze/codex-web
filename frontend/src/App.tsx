@@ -187,7 +187,13 @@ export function formatUpdatedAt(ms: number): string {
 export function conversationTitleForList(c: Conversation, project: Project | null): string {
   const title = c.title?.trim();
   if (title && title !== "New conversation") return title;
-  if (project) return pathBasename(project.root_path);
+  if (project) {
+    if (project.kind === "ssh" && project.ssh_target) {
+      const remotePath = project.remote_root_path ?? "";
+      return `${project.ssh_target}:${remotePath}`;
+    }
+    return pathBasename(project.root_path);
+  }
   return c.title;
 }
 
