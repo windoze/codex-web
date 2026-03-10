@@ -202,22 +202,85 @@ body {
   gap: 0;
 }
 
-.conversation {
-  text-align: left;
-  padding: 12px 14px;
-  border: 0;
+.conversationRow {
+  display: flex;
+  align-items: center;
   border-bottom: 1px solid rgba(127, 127, 127, 0.25);
-  background: transparent;
-  cursor: pointer;
-  color: inherit;
+  position: relative;
 }
 
-.conversation:hover {
+.conversationRow:hover {
   background: rgba(127, 127, 127, 0.10);
 }
 
-.conversation.active {
+.conversationRow.active {
   background: rgba(127, 127, 127, 0.15);
+}
+
+.conversation {
+  flex: 1 1 auto;
+  text-align: left;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  min-width: 0;
+}
+
+.conversationMenuWrap {
+  position: relative;
+  flex: 0 0 auto;
+  padding-right: 8px;
+}
+
+.conversationMenuButton {
+  font-size: 16px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.conversationRow:hover .conversationMenuButton,
+.conversationMenuButton:focus {
+  opacity: 1;
+}
+
+.dropdownMenu {
+  position: absolute;
+  right: 4px;
+  top: 100%;
+  z-index: 100;
+  min-width: 140px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  padding: 4px 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.dropdownItem {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.dropdownItem:hover {
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.dropdownItemDanger {
+  color: rgba(255, 80, 80, 0.95);
 }
 
 .conversationTitle {
@@ -298,6 +361,8 @@ body {
   grid-template-rows: auto auto auto 1fr auto;
   height: 100vh;
   height: 100dvh;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .chatHeader {
@@ -314,6 +379,8 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
 }
 
 .menuButton {
@@ -326,6 +393,9 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 0;
 }
 
 .chatTitleText {
@@ -333,6 +403,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .chatStatus {
@@ -346,12 +417,15 @@ body {
   opacity: 0.6;
   font-weight: 500;
   white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .chatActions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .toggle {
@@ -620,10 +694,6 @@ body {
 .composer {
   border-top: 1px solid rgba(127, 127, 127, 0.25);
   padding: 12px 14px;
-  display: grid;
-  grid-template-columns: 1fr 100px;
-  gap: 10px;
-  align-items: flex-end;
 }
 
 .composerField {
@@ -634,12 +704,13 @@ body {
   border: 1px solid rgba(127, 127, 127, 0.35);
   background: transparent;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 10px;
 }
 
-.composerSpinner {
+.composerActionButton {
   flex: 0 0 auto;
+  align-self: flex-end;
 }
 
 .micButton {
@@ -868,16 +939,15 @@ body {
   }
 
   .chatActions {
-    flex-wrap: wrap;
     justify-content: flex-end;
   }
 
   .chatTitle {
-    flex-wrap: wrap;
+    overflow: hidden;
   }
 
   .tokenUsage {
-    white-space: normal;
+    display: none;
   }
 
   .modalBackdrop {

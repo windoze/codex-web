@@ -156,7 +156,7 @@ function pad2(n: number): string {
 }
 
 function formatLocalTimestamp(ms: number): string {
-  // Local time is more readable for a UI (matches the conversation list’s local timestamp display).
+  // Local time is more readable for a UI (matches the conversation list's local timestamp display).
   const d = new Date(ms);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(
     d.getMinutes(),
@@ -670,6 +670,20 @@ export default function App() {
   const [pendingInteractions, setPendingInteractions] = useState<InteractionRequest[]>([]);
   const [showRawMessages, setShowRawMessages] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown menu when clicking outside
+  useEffect(() => {
+    if (!menuOpenId) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpenId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpenId]);
 
   const projectsById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -1200,14 +1214,13 @@ export default function App() {
     }
   }
 
-  async function onRenameConversation() {
-    if (!activeConversation) return;
-    const nextTitle = window.prompt("New conversation title", activeConversation.title);
+  async function onRenameConversation(conv: ConversationListItem) {
+    const nextTitle = window.prompt("New conversation title", conv.title);
     if (!nextTitle) return;
     const trimmed = nextTitle.trim();
     if (!trimmed) return;
     try {
-      await updateConversation(activeConversation.id, { title: trimmed });
+      await updateConversation(conv.id, { title: trimmed });
       const list = await listConversations();
       setConversations(list);
     } catch (err: unknown) {
@@ -1219,16 +1232,17 @@ export default function App() {
     }
   }
 
-  async function onArchiveConversation() {
-    if (!activeConversation) return;
-    const ok = window.confirm(`Archive "${activeConversation.title}"?`);
+  async function onArchiveConversation(conv: ConversationListItem) {
+    const ok = window.confirm(`Archive "${conv.title}"?`);
     if (!ok) return;
     try {
-      await updateConversation(activeConversation.id, { archived: true });
+      await updateConversation(conv.id, { archived: true });
       const list = await listConversations();
       setConversations(list);
-      setActiveConversationId(list[0]?.id ?? null);
-      setEvents([]);
+      if (conv.id === activeConversationId) {
+        setActiveConversationId(list[0]?.id ?? null);
+        setEvents([]);
+      }
     } catch (err: unknown) {
       if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
@@ -1255,10 +1269,9 @@ export default function App() {
     }
   }
 
-  async function onDeleteConversation() {
-    if (!activeConversation) return;
-    const conversationId = activeConversation.id;
-    const label = conversationTitleForList(activeConversation, conversationProject(activeConversation));
+  async function onDeleteConversation(conv: ConversationListItem) {
+    const conversationId = conv.id;
+    const label = conversationTitleForList(conv, conversationProject(conv));
 
     const ok = window.confirm(`Delete "${label}"? This cannot be undone.`);
     if (!ok) return;
@@ -1307,8 +1320,10 @@ export default function App() {
     try {
       const list = await listConversations();
       setConversations(list);
-      setActiveConversationId(list[0]?.id ?? null);
-      setEvents([]);
+      if (conversationId === activeConversationId) {
+        setActiveConversationId(list[0]?.id ?? null);
+        setEvents([]);
+      }
     } catch (err: unknown) {
       if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
@@ -1436,27 +1451,91 @@ export default function App() {
 
         <div className="conversationList">
           {conversations.map((c) => (
-            <button
+            <div
               key={c.id}
-              className={c.id === activeConversationId ? "conversation active" : "conversation"}
-              onClick={() => onSelectConversation(c.id)}
-              type="button"
+              className={c.id === activeConversationId ? "conversationRow active" : "conversationRow"}
             >
-              <div className="conversationTopRow">
-                <div className="conversationTitleWrap">
-                  {isTurnInProgress(c.run_status) || (c.id === activeConversationId && isConversationRunning) ? (
-                    <span className="spinner conversationSpinner" aria-label="Turn in progress" title="Turn in progress" />
-                  ) : null}
-                  <ToolBadge tool={c.tool} />
-                  <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
+              <button
+                className="conversation"
+                onClick={() => onSelectConversation(c.id)}
+                type="button"
+              >
+                <div className="conversationTopRow">
+                  <div className="conversationTitleWrap">
+                    {isTurnInProgress(c.run_status) || (c.id === activeConversationId && isConversationRunning) ? (
+                      <span className="spinner conversationSpinner" aria-label="Turn in progress" title="Turn in progress" />
+                    ) : null}
+                    <ToolBadge tool={c.tool} />
+                    <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
+                  </div>
+                  <div className="conversationTime">{formatUpdatedAt(c.updated_at_ms)}</div>
                 </div>
-                <div className="conversationTime">{formatUpdatedAt(c.updated_at_ms)}</div>
+              </button>
+              <div className="conversationMenuWrap" ref={menuOpenId === c.id ? menuRef : undefined}>
+                <button
+                  className="button iconButton conversationMenuButton"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpenId(menuOpenId === c.id ? null : c.id);
+                  }}
+                  aria-label="More actions"
+                  title="More actions"
+                >
+                  &hellip;
+                </button>
+                {menuOpenId === c.id ? (
+                  <div className="dropdownMenu">
+                    <button
+                      className="dropdownItem"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpenId(null);
+                        void onRenameConversation(c);
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      className="dropdownItem"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpenId(null);
+                        void onArchiveConversation(c);
+                      }}
+                    >
+                      Archive
+                    </button>
+                    <a
+                      className="dropdownItem"
+                      href={`${apiBase()}/api/conversations/${c.id}/export?format=md`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => setMenuOpenId(null)}
+                    >
+                      Export
+                    </a>
+                    <button
+                      className="dropdownItem dropdownItemDanger"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpenId(null);
+                        void onDeleteConversation(c);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            </button>
+            </div>
           ))}
           {conversations.length === 0 ? (
             <div className="muted" style={{ padding: 12 }}>
-              Click “New conversation…” to start from a project directory.
+              Click "New conversation…" to start from a project directory.
             </div>
           ) : null}
         </div>
@@ -1486,12 +1565,7 @@ export default function App() {
                   ? conversationTitleForList(activeConversation, conversationProject(activeConversation))
                   : "No conversation"}
               </span>
-              {tokenUsage ? (
-                <span className="tokenUsage">
-                  ({tokenUsage.cached_input_tokens} cached tokens, {tokenUsage.input_tokens} input tokens,{" "}
-                  {tokenUsage.output_tokens} output tokens)
-                </span>
-              ) : null}
+
               {effectiveRunStatus ? <span className="chatStatus">({effectiveRunStatus})</span> : null}
             </div>
           </div>
@@ -1504,33 +1578,7 @@ export default function App() {
               />
               <span>Show raw messages</span>
             </label>
-            {activeConversation ? (
-              <>
-                {isConversationRunning ? (
-                  <button className="button buttonWarn" type="button" onClick={onCancelConversation}>
-                    Stop
-                  </button>
-                ) : null}
-                <button className="button" type="button" onClick={onRenameConversation}>
-                  Rename
-                </button>
-                <button className="button" type="button" onClick={onArchiveConversation}>
-                  Archive
-                </button>
-                <button className="button buttonDanger" type="button" onClick={onDeleteConversation}>
-                  Delete
-                </button>
-                <a
-                  className="button"
-                  href={`${apiBase()}/api/conversations/${activeConversation.id}/export?format=md`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Export
-                </a>
-              </>
-            ) : null}
-            {authToken ? (
+{authToken ? (
               <button
                 className="button iconButton"
                 type="button"
@@ -1593,9 +1641,6 @@ export default function App() {
 
         <form className="composer" onSubmit={onSendMessage}>
           <div className="composerField">
-            {isConversationRunning ? (
-              <span className="spinner spinnerLarge composerSpinner" aria-label="Turn in progress" title="Turn in progress" />
-            ) : null}
             <textarea
               ref={composerTextareaRef}
               value={messageText}
@@ -1628,14 +1673,32 @@ export default function App() {
                 </svg>
               </button>
             ) : null}
+            {isConversationRunning ? (
+              <button
+                className="button iconButton composerActionButton buttonWarn"
+                type="button"
+                onClick={onCancelConversation}
+                aria-label="Stop"
+                title="Stop"
+              >
+                <svg viewBox="0 0 24 24" className="icon" aria-hidden="true">
+                  <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                className="button iconButton composerActionButton"
+                type="submit"
+                disabled={!activeConversationId || isSending || isDictating}
+                aria-label="Send"
+                title="Send"
+              >
+                <svg viewBox="0 0 24 24" className="icon" aria-hidden="true">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor" />
+                </svg>
+              </button>
+            )}
           </div>
-          <button
-            className="button"
-            type="submit"
-            disabled={!activeConversationId || isSending || isConversationRunning || isDictating}
-          >
-            Send
-          </button>
         </form>
       </main>
 
