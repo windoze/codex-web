@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import openaiSvg from "./assets/openai.svg?raw";
@@ -712,10 +712,18 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastEventIdRef = useRef<number>(0);
   const speechRef = useRef<SpeechRecognitionLike | null>(null);
   const speechBaseTextRef = useRef<string>("");
   const speechFinalTextRef = useRef<string>("");
+
+  useLayoutEffect(() => {
+    const el = composerTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [messageText]);
 
   function enterLogin(opts: { hadToken: boolean; message: string }) {
     // Clear any persisted token to prevent background polling loops.
@@ -1136,10 +1144,10 @@ export default function App() {
     }
   }
 
-  async function onSendMessage(e: FormEvent) {
-    e.preventDefault();
+  async function sendMessage() {
     if (!activeConversationId) return;
     if (!messageText.trim()) return;
+    if (isSending) return;
     if (isConversationRunning) return;
     if (isDictating) stopDictation();
     setError(null);
@@ -1168,6 +1176,11 @@ export default function App() {
     } finally {
       setIsSending(false);
     }
+  }
+
+  async function onSendMessage(e: FormEvent) {
+    e.preventDefault();
+    await sendMessage();
   }
 
   async function onRespond(interactionId: string, action: string) {
@@ -1583,12 +1596,20 @@ export default function App() {
             {isConversationRunning ? (
               <span className="spinner spinnerLarge composerSpinner" aria-label="Turn in progress" title="Turn in progress" />
             ) : null}
-            <input
+            <textarea
+              ref={composerTextareaRef}
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                if (!(e.ctrlKey || e.metaKey)) return;
+                e.preventDefault();
+                void sendMessage();
+              }}
               className="composerInput"
               placeholder={activeConversationId ? "Send a message…" : "Create/select a conversation first"}
               disabled={!activeConversationId || isSending || isConversationRunning || isDictating}
+              rows={1}
             />
             {speechSupported ? (
               <button
