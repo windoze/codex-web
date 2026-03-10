@@ -8,7 +8,7 @@ use tokio::sync::{Semaphore, broadcast, watch};
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use crate::db::{ConversationEvent, Db, RunStatus};
+use crate::db::{ConversationEvent, Db, Project, RunStatus};
 use crate::events::emit;
 use crate::runners::Runner;
 
@@ -23,6 +23,7 @@ pub struct TurnContext {
     pub runner: Arc<dyn Runner>,
     pub conversation_id: Uuid,
     pub project_root: PathBuf,
+    pub project: Project,
     pub tool_session_id: Option<String>,
     pub prompt: String,
     pub ws_clients: Arc<AtomicUsize>,
@@ -96,6 +97,7 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
         runner,
         conversation_id,
         project_root,
+        project,
         tool_session_id,
         prompt,
         ws_clients,
@@ -160,6 +162,7 @@ async fn run_turn_inner(ctx: TurnContext) -> anyhow::Result<()> {
             event_tx: event_tx.clone(),
             conversation_id,
             project_root: project_root.clone(),
+            project: project.clone(),
             tool_session_id,
             prompt,
             ws_clients: ws_clients.clone(),

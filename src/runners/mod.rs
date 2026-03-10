@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicUsize;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::db::{ConversationEvent, Db};
+use crate::db::{ConversationEvent, Db, Project};
 use crate::tool::ToolKind;
 
 pub mod claude;
@@ -18,6 +18,7 @@ pub struct RunnerTurnContext {
     pub event_tx: broadcast::Sender<ConversationEvent>,
     pub conversation_id: Uuid,
     pub project_root: std::path::PathBuf,
+    pub project: Project,
     pub tool_session_id: Option<String>,
     pub prompt: String,
     pub ws_clients: Arc<AtomicUsize>,

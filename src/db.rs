@@ -15,6 +15,17 @@ pub struct Db {
     pool: SqlitePool,
 }
 
+pub struct CreateProjectParams {
+    pub name: String,
+    pub kind: ProjectKind,
+    pub root_path: String,
+    pub ssh_target: Option<String>,
+    pub ssh_port: Option<i64>,
+    pub remote_root_path: Option<String>,
+    pub ssh_identity_file: Option<String>,
+    pub ssh_known_hosts_policy: Option<String>,
+}
+
 impl Db {
     pub async fn connect(db_path: &Path) -> anyhow::Result<Self> {
         if let Some(parent) = db_path.parent() {
@@ -47,21 +58,78 @@ impl Db {
     }
 
     pub async fn create_project(&self, name: &str, root_path: &Path) -> anyhow::Result<Project> {
-        let now = now_ms();
-        let root_path_str = root_path.to_string_lossy().to_string();
-
-        if let Some(existing) = sqlx::query_as::<_, ProjectRow>(
-            r#"
-            SELECT id, name, root_path, created_at_ms, updated_at_ms
-            FROM projects
-            WHERE root_path = ?1
-            "#,
-        )
-        .bind(&root_path_str)
-        .fetch_optional(&self.pool)
+        self.create_project_full(CreateProjectParams {
+            name: name.to_owned(),
+            kind: ProjectKind::Local,
+            root_path: root_path.to_string_lossy().to_string(),
+            ssh_target: None,
+            ssh_port: None,
+            remote_root_path: None,
+            ssh_identity_file: None,
+            ssh_known_hosts_policy: None,
+        })
         .await
-        .context("lookup project by root_path")?
-        {
+    }
+
+    pub async fn create_ssh_project(
+        &self,
+        name: &str,
+        ssh_target: &str,
+        ssh_port: Option<i64>,
+        remote_root_path: &str,
+        ssh_identity_file: Option<&str>,
+        ssh_known_hosts_policy: Option<&str>,
+    ) -> anyhow::Result<Project> {
+        self.create_project_full(CreateProjectParams {
+            name: name.to_owned(),
+            kind: ProjectKind::Ssh,
+            root_path: String::new(),
+            ssh_target: Some(ssh_target.to_owned()),
+            ssh_port,
+            remote_root_path: Some(remote_root_path.to_owned()),
+            ssh_identity_file: ssh_identity_file.map(|s| s.to_owned()),
+            ssh_known_hosts_policy: ssh_known_hosts_policy.map(|s| s.to_owned()),
+        })
+        .await
+    }
+
+    async fn create_project_full(&self, params: CreateProjectParams) -> anyhow::Result<Project> {
+        let now = now_ms();
+
+        // For local projects, de-dup by root_path; for SSH projects, by ssh_target + remote_root_path.
+        let existing = match params.kind {
+            ProjectKind::Local => {
+                sqlx::query_as::<_, ProjectRow>(
+                    r#"
+                    SELECT id, name, kind, root_path, ssh_target, ssh_port, remote_root_path,
+                           ssh_identity_file, ssh_known_hosts_policy, created_at_ms, updated_at_ms
+                    FROM projects
+                    WHERE kind = 'local' AND root_path = ?1
+                    "#,
+                )
+                .bind(&params.root_path)
+                .fetch_optional(&self.pool)
+                .await
+                .context("lookup project by root_path")?
+            }
+            ProjectKind::Ssh => {
+                sqlx::query_as::<_, ProjectRow>(
+                    r#"
+                    SELECT id, name, kind, root_path, ssh_target, ssh_port, remote_root_path,
+                           ssh_identity_file, ssh_known_hosts_policy, created_at_ms, updated_at_ms
+                    FROM projects
+                    WHERE kind = 'ssh' AND ssh_target = ?1 AND remote_root_path = ?2
+                    "#,
+                )
+                .bind(params.ssh_target.as_deref().unwrap_or(""))
+                .bind(params.remote_root_path.as_deref().unwrap_or(""))
+                .fetch_optional(&self.pool)
+                .await
+                .context("lookup ssh project by target+path")?
+            }
+        };
+
+        if let Some(existing) = existing {
             let existing_project = Project::from(existing);
             sqlx::query(
                 r#"
@@ -71,7 +139,7 @@ impl Db {
                 "#,
             )
             .bind(existing_project.id.to_string())
-            .bind(name)
+            .bind(&params.name)
             .bind(now)
             .execute(&self.pool)
             .await
@@ -79,28 +147,41 @@ impl Db {
 
             return Ok(Project {
                 updated_at_ms: now,
-                name: name.to_owned(),
+                name: params.name,
                 ..existing_project
             });
         }
 
         let project = Project {
             id: Uuid::new_v4(),
-            name: name.to_owned(),
-            root_path: root_path_str,
+            name: params.name,
+            kind: params.kind,
+            root_path: params.root_path,
+            ssh_target: params.ssh_target,
+            ssh_port: params.ssh_port,
+            remote_root_path: params.remote_root_path,
+            ssh_identity_file: params.ssh_identity_file,
+            ssh_known_hosts_policy: params.ssh_known_hosts_policy,
             created_at_ms: now,
             updated_at_ms: now,
         };
 
         sqlx::query(
             r#"
-            INSERT INTO projects (id, name, root_path, created_at_ms, updated_at_ms)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO projects (id, name, kind, root_path, ssh_target, ssh_port, remote_root_path,
+                                  ssh_identity_file, ssh_known_hosts_policy, created_at_ms, updated_at_ms)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
         )
         .bind(project.id.to_string())
         .bind(&project.name)
+        .bind(project.kind.as_str())
         .bind(&project.root_path)
+        .bind(&project.ssh_target)
+        .bind(project.ssh_port)
+        .bind(&project.remote_root_path)
+        .bind(&project.ssh_identity_file)
+        .bind(&project.ssh_known_hosts_policy)
         .bind(project.created_at_ms)
         .bind(project.updated_at_ms)
         .execute(&self.pool)
@@ -113,7 +194,8 @@ impl Db {
     pub async fn list_projects(&self) -> anyhow::Result<Vec<Project>> {
         let rows = sqlx::query_as::<_, ProjectRow>(
             r#"
-            SELECT id, name, root_path, created_at_ms, updated_at_ms
+            SELECT id, name, kind, root_path, ssh_target, ssh_port, remote_root_path,
+                   ssh_identity_file, ssh_known_hosts_policy, created_at_ms, updated_at_ms
             FROM projects
             ORDER BY updated_at_ms DESC
             "#,
@@ -128,7 +210,8 @@ impl Db {
     pub async fn get_project(&self, project_id: Uuid) -> anyhow::Result<Project> {
         let row = sqlx::query_as::<_, ProjectRow>(
             r#"
-            SELECT id, name, root_path, created_at_ms, updated_at_ms
+            SELECT id, name, kind, root_path, ssh_target, ssh_port, remote_root_path,
+                   ssh_identity_file, ssh_known_hosts_policy, created_at_ms, updated_at_ms
             FROM projects
             WHERE id = ?1
             "#,
@@ -143,7 +226,8 @@ impl Db {
     pub async fn get_project_optional(&self, project_id: Uuid) -> anyhow::Result<Option<Project>> {
         let row = sqlx::query_as::<_, ProjectRow>(
             r#"
-            SELECT id, name, root_path, created_at_ms, updated_at_ms
+            SELECT id, name, kind, root_path, ssh_target, ssh_port, remote_root_path,
+                   ssh_identity_file, ssh_known_hosts_policy, created_at_ms, updated_at_ms
             FROM projects
             WHERE id = ?1
             "#,
@@ -681,11 +765,62 @@ impl Db {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectKind {
+    Local,
+    Ssh,
+}
+
+impl ProjectKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProjectKind::Local => "local",
+            ProjectKind::Ssh => "ssh",
+        }
+    }
+}
+
+impl std::str::FromStr for ProjectKind {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "local" => Ok(ProjectKind::Local),
+            "ssh" => Ok(ProjectKind::Ssh),
+            other => Err(anyhow::anyhow!("unknown project kind: {other}")),
+        }
+    }
+}
+
+impl Default for ProjectKind {
+    fn default() -> Self {
+        ProjectKind::Local
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     pub id: Uuid,
     pub name: String,
+    pub kind: ProjectKind,
+    /// For local projects: the local directory. For SSH projects: empty or unused.
     pub root_path: String,
+    /// SSH target (e.g. `user@host` or an SSH config host name). Only set for SSH projects.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_target: Option<String>,
+    /// Optional SSH port override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_port: Option<i64>,
+    /// Absolute path on the remote host. Only set for SSH projects.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_root_path: Option<String>,
+    /// Optional path to an SSH identity file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_identity_file: Option<String>,
+    /// Optional known-hosts policy ("strict" or "accept-new").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_known_hosts_policy: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -819,7 +954,13 @@ pub struct InteractionRequest {
 struct ProjectRow {
     id: String,
     name: String,
+    kind: String,
     root_path: String,
+    ssh_target: Option<String>,
+    ssh_port: Option<i64>,
+    remote_root_path: Option<String>,
+    ssh_identity_file: Option<String>,
+    ssh_known_hosts_policy: Option<String>,
     created_at_ms: i64,
     updated_at_ms: i64,
 }
@@ -829,7 +970,13 @@ impl From<ProjectRow> for Project {
         Self {
             id: Uuid::parse_str(&row.id).unwrap_or_else(|_| Uuid::nil()),
             name: row.name,
+            kind: row.kind.parse().unwrap_or_default(),
             root_path: row.root_path,
+            ssh_target: row.ssh_target,
+            ssh_port: row.ssh_port,
+            remote_root_path: row.remote_root_path,
+            ssh_identity_file: row.ssh_identity_file,
+            ssh_known_hosts_policy: row.ssh_known_hosts_policy,
             created_at_ms: row.created_at_ms,
             updated_at_ms: row.updated_at_ms,
         }

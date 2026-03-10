@@ -10,7 +10,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::db::{
-    Conversation, ConversationEvent, ConversationListItem, InteractionRequest, Project, Run, RunStatus,
+    Conversation, ConversationEvent, ConversationListItem, InteractionRequest, Project, ProjectKind,
+    Run, RunStatus,
 };
 use crate::server::AppState;
 use crate::tool::ToolKind;
@@ -190,38 +191,96 @@ async fn fs_list(
 
 #[derive(Debug, Deserialize)]
 struct CreateProjectRequest {
-    root_path: String,
+    kind: Option<ProjectKind>,
+    root_path: Option<String>,
     name: Option<String>,
+    ssh_target: Option<String>,
+    ssh_port: Option<i64>,
+    remote_root_path: Option<String>,
+    ssh_identity_file: Option<String>,
+    ssh_known_hosts_policy: Option<String>,
 }
 
 async fn create_project(
     State(state): State<AppState>,
     Json(req): Json<CreateProjectRequest>,
 ) -> Result<Json<Project>, ApiError> {
-    let root = PathBuf::from(&req.root_path);
-    let md = tokio::fs::metadata(&root)
-        .await
-        .map_err(|e| ApiError::bad_request(format!("invalid root_path: {e}")))?;
-    if !md.is_dir() {
-        return Err(ApiError::bad_request("root_path must be a directory"));
+    let kind = req.kind.unwrap_or(ProjectKind::Local);
+
+    match kind {
+        ProjectKind::Local => {
+            let root_path = req
+                .root_path
+                .as_deref()
+                .ok_or_else(|| ApiError::bad_request("root_path is required for local projects"))?;
+            let root = PathBuf::from(root_path);
+            let md = tokio::fs::metadata(&root)
+                .await
+                .map_err(|e| ApiError::bad_request(format!("invalid root_path: {e}")))?;
+            if !md.is_dir() {
+                return Err(ApiError::bad_request("root_path must be a directory"));
+            }
+
+            let name = match req.name {
+                Some(n) if !n.trim().is_empty() => n,
+                _ => root
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Project")
+                    .to_string(),
+            };
+
+            let project = state
+                .db
+                .create_project(&name, &root)
+                .await
+                .map_err(ApiError::internal)?;
+
+            Ok(Json(project))
+        }
+        ProjectKind::Ssh => {
+            let ssh_target = req
+                .ssh_target
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| ApiError::bad_request("ssh_target is required for SSH projects"))?;
+            let remote_root_path = req
+                .remote_root_path
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| {
+                    ApiError::bad_request("remote_root_path is required for SSH projects")
+                })?;
+
+            // Derive a name from the remote path basename if none provided.
+            let name = match req.name {
+                Some(n) if !n.trim().is_empty() => n,
+                _ => {
+                    let basename = remote_root_path
+                        .trim_end_matches('/')
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or("SSH Project");
+                    format!("{basename} ({ssh_target})")
+                }
+            };
+
+            let project = state
+                .db
+                .create_ssh_project(
+                    &name,
+                    ssh_target,
+                    req.ssh_port,
+                    remote_root_path,
+                    req.ssh_identity_file.as_deref(),
+                    req.ssh_known_hosts_policy.as_deref(),
+                )
+                .await
+                .map_err(ApiError::internal)?;
+
+            Ok(Json(project))
+        }
     }
-
-    let name = match req.name {
-        Some(n) if !n.trim().is_empty() => n,
-        _ => root
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Project")
-            .to_string(),
-    };
-
-    let project = state
-        .db
-        .create_project(&name, &root)
-        .await
-        .map_err(ApiError::internal)?;
-
-    Ok(Json(project))
 }
 
 async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project>>, ApiError> {
@@ -640,7 +699,8 @@ async fn post_user_message(
         event_tx: state.event_tx.clone(),
         runner,
         conversation_id,
-        project_root: PathBuf::from(project.root_path),
+        project_root: PathBuf::from(&project.root_path),
+        project: project.clone(),
         tool_session_id: run.tool_session_id,
         prompt,
         ws_clients: state.ws_clients.clone(),
