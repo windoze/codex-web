@@ -25,6 +25,9 @@ pub fn router() -> Router<AppState> {
         )
         .route("/fs/home", get(fs_home))
         .route("/fs/list", get(fs_list))
+        .route("/ssh/fs/home", get(ssh_fs_home))
+        .route("/ssh/fs/list", get(ssh_fs_list))
+        .route("/ssh/check", post(ssh_check))
         .route(
             "/conversations/:conversation_id",
             get(get_conversation)
@@ -779,6 +782,131 @@ async fn list_all_pending_interactions(
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(pending))
+}
+
+// ---------------------------------------------------------------------------
+// SSH filesystem and connectivity endpoints
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct SshFsQuery {
+    ssh_target: String,
+    ssh_port: Option<u16>,
+    ssh_identity_file: Option<String>,
+}
+
+fn ssh_target_from_query(q: &SshFsQuery) -> crate::ssh::SshTarget {
+    crate::ssh::SshTarget {
+        target: q.ssh_target.clone(),
+        port: q.ssh_port,
+        identity_file: q.ssh_identity_file.clone(),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SshFsHomeResponse {
+    path: String,
+}
+
+async fn ssh_fs_home(
+    Query(q): Query<SshFsQuery>,
+) -> Result<Json<SshFsHomeResponse>, ApiError> {
+    if q.ssh_target.trim().is_empty() {
+        return Err(ApiError::bad_request("ssh_target is required"));
+    }
+
+    let target = ssh_target_from_query(&q);
+    let home = crate::ssh::remote_home(&target)
+        .await
+        .map_err(|e| ApiError::bad_request(format!("SSH error: {e}")))?;
+
+    Ok(Json(SshFsHomeResponse { path: home }))
+}
+
+#[derive(Debug, Deserialize)]
+struct SshFsListQuery {
+    ssh_target: String,
+    ssh_port: Option<u16>,
+    ssh_identity_file: Option<String>,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SshFsListResponse {
+    path: String,
+    parent: Option<String>,
+    entries: Vec<crate::ssh::RemoteFsEntry>,
+}
+
+async fn ssh_fs_list(
+    Query(q): Query<SshFsListQuery>,
+) -> Result<Json<SshFsListResponse>, ApiError> {
+    if q.ssh_target.trim().is_empty() {
+        return Err(ApiError::bad_request("ssh_target is required"));
+    }
+    if q.path.trim().is_empty() {
+        return Err(ApiError::bad_request("path is required"));
+    }
+
+    let target = crate::ssh::SshTarget {
+        target: q.ssh_target,
+        port: q.ssh_port,
+        identity_file: q.ssh_identity_file,
+    };
+
+    let (full_path, parent, entries) = crate::ssh::remote_fs_list(&target, &q.path)
+        .await
+        .map_err(|e| ApiError::bad_request(format!("SSH error: {e}")))?;
+
+    Ok(Json(SshFsListResponse {
+        path: full_path,
+        parent,
+        entries,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct SshCheckRequest {
+    ssh_target: String,
+    ssh_port: Option<u16>,
+    ssh_identity_file: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SshCheckResponse {
+    ok: bool,
+    remote_user: String,
+    remote_home: String,
+    codex_found: bool,
+}
+
+async fn ssh_check(
+    Json(req): Json<SshCheckRequest>,
+) -> Result<Json<SshCheckResponse>, ApiError> {
+    if req.ssh_target.trim().is_empty() {
+        return Err(ApiError::bad_request("ssh_target is required"));
+    }
+
+    let target = crate::ssh::SshTarget {
+        target: req.ssh_target,
+        port: req.ssh_port,
+        identity_file: req.ssh_identity_file,
+    };
+
+    match crate::ssh::ssh_check(&target).await {
+        Ok(result) => Ok(Json(SshCheckResponse {
+            ok: true,
+            remote_user: result.remote_user,
+            remote_home: result.remote_home,
+            codex_found: result.codex_found,
+        })),
+        Err(_e) => Ok(Json(SshCheckResponse {
+            ok: false,
+            remote_user: String::new(),
+            remote_home: String::new(),
+            codex_found: false,
+        })),
+    }
 }
 
 #[derive(Debug)]
