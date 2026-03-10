@@ -8,5 +8,6 @@ pub mod orchestrator;
 pub mod protocol;
 pub mod runners;
 pub mod server;
+pub mod ssh;
 pub mod tool;
 pub mod turns;
