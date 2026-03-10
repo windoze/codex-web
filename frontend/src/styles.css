@@ -364,6 +364,14 @@ body {
   border-top-color: transparent;
 }
 
+.composerSpinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-color: rgba(0, 120, 255, 0.8);
+  border-top-color: transparent;
+}
+
 .conversationTime {
   font-size: 11px;
   opacity: 0.7;

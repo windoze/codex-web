@@ -1632,6 +1632,7 @@ export default function App() {
               </svg>
             </button>
             <div className="chatTitle">
+              {isConversationRunning ? <span className="spinner conversationSpinner" aria-label="Turn in progress" title="Turn in progress" /> : null}
               {activeConversation ? <ToolBadge tool={activeConversation.tool} /> : null}
               <span className="chatTitleText">
                 {activeConversation
@@ -1747,6 +1748,8 @@ export default function App() {
               </button>
             ) : null}
             {isConversationRunning ? (
+              <>
+              <span className="spinner composerSpinner" aria-label="Turn in progress" title="Turn in progress" />
               <button
                 className="button iconButton composerActionButton buttonWarn"
                 type="button"
@@ -1758,6 +1761,7 @@ export default function App() {
                   <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
                 </svg>
               </button>
+              </>
             ) : (
               <button
                 className="button iconButton composerActionButton"
