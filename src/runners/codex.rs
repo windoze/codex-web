@@ -46,12 +46,25 @@ async fn run_codex_turn(runtime: CodexRuntime, ctx: RunnerTurnContext) -> anyhow
         interaction_default_action,
     } = ctx;
 
+    // Build SSH config if the project is remote.
+    let ssh_config = if _project.kind == crate::db::ProjectKind::Ssh {
+        Some(crate::codex::SshCodexConfig {
+            ssh_target: _project.ssh_target.clone().unwrap_or_default(),
+            ssh_port: _project.ssh_port.map(|p| p as u16),
+            ssh_identity_file: _project.ssh_identity_file.clone(),
+            remote_root_path: _project.remote_root_path.clone().unwrap_or_default(),
+        })
+    } else {
+        None
+    };
+
     let outcome = crate::codex::run_jsonl_events_with_input(
         runtime,
         CodexInvocation {
             project_root: project_root.clone(),
             session_id: tool_session_id,
             prompt,
+            ssh: ssh_config,
         },
         |line| {
             let db = db.clone();

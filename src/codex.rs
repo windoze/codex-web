@@ -75,6 +75,16 @@ pub struct CodexInvocation {
     pub project_root: std::path::PathBuf,
     pub session_id: Option<String>,
     pub prompt: String,
+    /// If set, run Codex remotely over SSH instead of locally.
+    pub ssh: Option<SshCodexConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SshCodexConfig {
+    pub ssh_target: String,
+    pub ssh_port: Option<u16>,
+    pub ssh_identity_file: Option<String>,
+    pub remote_root_path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -170,35 +180,58 @@ where
         project_root,
         session_id,
         prompt,
+        ssh,
     } = invocation;
 
-    let mut cmd = tokio::process::Command::new("codex");
-    cmd.current_dir(&project_root);
+    let mut child = if let Some(ssh_cfg) = &ssh {
+        // Remote execution over SSH.
+        let remote_command = crate::ssh::build_remote_codex_command(
+            &ssh_cfg.remote_root_path,
+            session_id.as_deref(),
+            &prompt,
+            &cfg.ask_for_approval,
+            &cfg.sandbox,
+            cfg.skip_git_repo_check,
+        );
+        let target = crate::ssh::SshTarget {
+            target: ssh_cfg.ssh_target.clone(),
+            port: ssh_cfg.ssh_port,
+            identity_file: ssh_cfg.ssh_identity_file.clone(),
+        };
+        crate::ssh::spawn_remote_streaming(&target, &remote_command)
+            .await
+            .context("spawn remote codex via ssh")?
+    } else {
+        // Local execution.
+        let mut cmd = tokio::process::Command::new("codex");
+        cmd.current_dir(&project_root);
 
-    cmd.arg("--cd")
-        .arg(&project_root)
-        .arg("--ask-for-approval")
-        .arg(&cfg.ask_for_approval)
-        .arg("--sandbox")
-        .arg(&cfg.sandbox)
-        .arg("exec");
+        cmd.arg("--cd")
+            .arg(&project_root)
+            .arg("--ask-for-approval")
+            .arg(&cfg.ask_for_approval)
+            .arg("--sandbox")
+            .arg(&cfg.sandbox)
+            .arg("exec");
 
-    if cfg.skip_git_repo_check {
-        cmd.arg("--skip-git-repo-check");
-    }
+        if cfg.skip_git_repo_check {
+            cmd.arg("--skip-git-repo-check");
+        }
 
-    if let Some(session_id) = &session_id {
-        cmd.arg("resume").arg(session_id);
-    }
+        if let Some(session_id) = &session_id {
+            cmd.arg("resume").arg(session_id);
+        }
 
-    cmd.arg("--json").arg(prompt);
+        cmd.arg("--json").arg(&prompt);
 
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    cmd.kill_on_drop(true);
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        cmd.kill_on_drop(true);
 
-    let mut child = cmd.spawn().context("spawn codex process")?;
+        cmd.spawn().context("spawn codex process")?
+    };
+
     let stdout = child.stdout.take().context("codex stdout missing")?;
     let mut stdin = child.stdin.take().context("codex stdin missing")?;
     let mut lines = BufReader::new(stdout).lines();
@@ -242,7 +275,8 @@ where
 
     let status = child.wait().await.context("wait codex process")?;
     if !status.success() {
-        anyhow::bail!("codex exec failed with status: {status}");
+        let location = if ssh.is_some() { "remote" } else { "local" };
+        anyhow::bail!("codex exec failed ({location}) with status: {status}");
     }
 
     Ok(CodexOutcome {
