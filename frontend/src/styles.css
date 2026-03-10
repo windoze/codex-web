@@ -344,6 +344,20 @@ body {
   color: rgba(160, 70, 255, 0.95);
 }
 
+.sshBadge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 180, 120, 0.35);
+  background: rgba(0, 180, 120, 0.12);
+  color: rgba(0, 180, 120, 0.95);
+  line-height: 1;
+}
+
 .conversationSpinner {
   flex: 0 0 auto;
   border-color: rgba(0, 120, 255, 0.8);

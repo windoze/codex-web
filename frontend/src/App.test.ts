@@ -27,6 +27,7 @@ describe("ui helpers", () => {
     const project: Project = {
       id: "00000000-0000-0000-0000-000000000001",
       name: "my-project",
+      kind: "local",
       root_path: "/Users/alice/work/my-project",
       created_at_ms: 0,
       updated_at_ms: 0,
@@ -47,6 +48,7 @@ describe("ui helpers", () => {
     const project: Project = {
       id: "00000000-0000-0000-0000-000000000001",
       name: "my-project",
+      kind: "local",
       root_path: "/Users/alice/work/my-project",
       created_at_ms: 0,
       updated_at_ms: 0,

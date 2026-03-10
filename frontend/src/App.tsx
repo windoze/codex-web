@@ -10,12 +10,14 @@ import {
   ConversationTool,
   InteractionRequest,
   Project,
+  ProjectKind,
   FsEntry,
   apiBase,
   clearAuthToken,
   cancelConversation,
   createConversation,
   createProject,
+  createSshProject,
   deleteConversation,
   getAuthToken,
   httpStatusFromUnknown,
@@ -27,6 +29,9 @@ import {
   setAuthToken,
   fsHome,
   fsList,
+  sshFsHome,
+  sshFsList,
+  sshCheck,
   postUserMessage,
   respondInteraction,
   updateConversation,
@@ -698,6 +703,11 @@ export default function App() {
     }
   });
   const [newConversationCreating, setNewConversationCreating] = useState(false);
+  const [newConversationSource, setNewConversationSource] = useState<ProjectKind>("local");
+  const [sshTarget, setSshTarget] = useState("");
+  const [sshPort, setSshPort] = useState("");
+  const [sshCheckStatus, setSshCheckStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
+  const [sshCheckError, setSshCheckError] = useState<string | null>(null);
 
   const [pickerPath, setPickerPath] = useState<string | null>(null);
   const [pickerParent, setPickerParent] = useState<string | null>(null);
@@ -998,14 +1008,25 @@ export default function App() {
     setSidebarOpen(false);
   }
 
-  async function loadPickerPath(path: string) {
+  async function loadPickerPath(path: string, source?: ProjectKind, target?: string, port?: string) {
+    const effectiveSource = source ?? newConversationSource;
     setPickerError(null);
     setPickerLoading(true);
     try {
-      const res = await fsList(path);
-      setPickerPath(res.path);
-      setPickerParent(res.parent);
-      setPickerEntries(res.entries);
+      if (effectiveSource === "ssh") {
+        const effectiveTarget = target ?? sshTarget;
+        const effectivePort = port ?? sshPort;
+        const portNum = effectivePort ? parseInt(effectivePort, 10) : undefined;
+        const res = await sshFsList(effectiveTarget, path, portNum || undefined);
+        setPickerPath(res.path);
+        setPickerParent(res.parent);
+        setPickerEntries(res.entries.map((e) => ({ name: e.name, path: e.path, kind: e.kind as FsEntry["kind"] })));
+      } else {
+        const res = await fsList(path);
+        setPickerPath(res.path);
+        setPickerParent(res.parent);
+        setPickerEntries(res.entries);
+      }
     } catch (err: unknown) {
       if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
@@ -1025,16 +1046,51 @@ export default function App() {
     setPickerEntries([]);
     setPickerParent(null);
     setPickerPath(null);
+    setNewConversationSource("local");
+    setSshTarget("");
+    setSshPort("");
+    setSshCheckStatus("idle");
+    setSshCheckError(null);
     try {
       const home = await fsHome();
       setHomePath(home.path);
-      await loadPickerPath(home.path);
+      await loadPickerPath(home.path, "local");
     } catch (err: unknown) {
       if (isUnauthorizedError(err)) {
         enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
         return;
       }
       setPickerError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onSshConnect() {
+    if (!sshTarget.trim()) return;
+    setSshCheckStatus("checking");
+    setSshCheckError(null);
+    setPickerError(null);
+    setPickerEntries([]);
+    setPickerParent(null);
+    setPickerPath(null);
+    const portNum = sshPort ? parseInt(sshPort, 10) : undefined;
+    try {
+      const result = await sshCheck(sshTarget.trim(), portNum || undefined);
+      if (!result.ok) {
+        setSshCheckStatus("error");
+        setSshCheckError("SSH connection failed");
+        return;
+      }
+      setSshCheckStatus("ok");
+      const home = await sshFsHome(sshTarget.trim(), portNum || undefined);
+      setHomePath(home.path);
+      await loadPickerPath(home.path, "ssh", sshTarget.trim(), sshPort);
+    } catch (err: unknown) {
+      if (isUnauthorizedError(err)) {
+        enterLogin({ hadToken: Boolean((getAuthToken() ?? "").trim()), message: "Please log in again." });
+        return;
+      }
+      setSshCheckStatus("error");
+      setSshCheckError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -1049,7 +1105,17 @@ export default function App() {
     setNewConversationCreating(true);
     try {
       const title = newConversationTitle.trim();
-      const project = await createProject(pickerPath);
+      let project: Project;
+      if (newConversationSource === "ssh") {
+        const portNum = sshPort ? parseInt(sshPort, 10) : undefined;
+        project = await createSshProject({
+          ssh_target: sshTarget.trim(),
+          ssh_port: portNum || undefined,
+          remote_root_path: pickerPath,
+        });
+      } else {
+        project = await createProject(pickerPath);
+      }
       const conversation = await createConversation(project.id, title || undefined, newConversationTool);
       try {
         window.localStorage.setItem("codex_web_new_conversation_tool", newConversationTool);
@@ -1466,6 +1532,7 @@ export default function App() {
                       <span className="spinner conversationSpinner" aria-label="Turn in progress" title="Turn in progress" />
                     ) : null}
                     <ToolBadge tool={c.tool} />
+                    {conversationProject(c)?.kind === "ssh" ? <span className="sshBadge" title={`SSH: ${conversationProject(c)?.ssh_target ?? ""}`}>SSH</span> : null}
                     <div className="conversationTitle">{conversationTitleForList(c, conversationProject(c))}</div>
                   </div>
                   <div className="conversationTime">{formatUpdatedAt(c.updated_at_ms)}</div>
@@ -1752,58 +1819,123 @@ export default function App() {
                 />
               </label>
 
-              <div className="field">
-                <div className="label">Project directory</div>
-                <div className="pickerHeader">
-                  <button
-                    className="button buttonSmall"
-                    type="button"
-                    onClick={() => {
-                      if (homePath) loadPickerPath(homePath).catch(() => {});
-                    }}
-                    disabled={!homePath || pickerLoading || newConversationCreating}
-                  >
-                    Home
-                  </button>
-                  <button
-                    className="button buttonSmall"
-                    type="button"
-                    onClick={() => {
-                      if (pickerParent) loadPickerPath(pickerParent).catch(() => {});
-                    }}
-                    disabled={!pickerParent || pickerLoading || newConversationCreating}
-                  >
-                    Up
-                  </button>
-                  <div className="pickerPath">{pickerPath ?? "Loading…"}</div>
-                </div>
+              <label className="field">
+                <div className="label">Project source</div>
+                <select
+                  className="input"
+                  value={newConversationSource}
+                  onChange={(e) => {
+                    const next = e.target.value === "ssh" ? "ssh" : "local";
+                    setNewConversationSource(next);
+                    setPickerEntries([]);
+                    setPickerParent(null);
+                    setPickerPath(null);
+                    setPickerError(null);
+                    setSshCheckStatus("idle");
+                    setSshCheckError(null);
+                    if (next === "local" && homePath) {
+                      loadPickerPath(homePath, "local").catch(() => {});
+                    }
+                  }}
+                  disabled={newConversationCreating}
+                >
+                  <option value="local">Local</option>
+                  <option value="ssh">SSH Remote</option>
+                </select>
+              </label>
 
-                <div className="pickerList">
-                  {pickerLoading ? <div className="muted">Loading…</div> : null}
-                  {pickerEntries.map((entry) => {
-                    const isOpenable = entry.kind === "dir" || entry.kind === "symlink";
-                    return (
-                      <button
-                        key={entry.path}
-                        type="button"
-                        className={isOpenable ? "pickerEntry" : "pickerEntry pickerEntryDisabled"}
-                        onClick={() => {
-                          if (isOpenable) loadPickerPath(entry.path).catch(() => {});
-                        }}
-                        disabled={!isOpenable || pickerLoading || newConversationCreating}
-                        title={entry.path}
-                      >
-                        <span className="pickerEntryName">{entry.name}</span>
-                        <span className="pickerEntryKind">{entry.kind}</span>
-                      </button>
-                    );
-                  })}
+              {newConversationSource === "ssh" ? (
+                <div className="field">
+                  <div className="label">SSH connection</div>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+                    <label style={{ flex: 1 }}>
+                      <div className="label" style={{ fontSize: "0.75rem" }}>Host (user@host)</div>
+                      <input
+                        className="input"
+                        value={sshTarget}
+                        onChange={(e) => { setSshTarget(e.target.value); setSshCheckStatus("idle"); }}
+                        placeholder="user@hostname"
+                        disabled={newConversationCreating || sshCheckStatus === "checking"}
+                      />
+                    </label>
+                    <label style={{ width: "5rem" }}>
+                      <div className="label" style={{ fontSize: "0.75rem" }}>Port</div>
+                      <input
+                        className="input"
+                        value={sshPort}
+                        onChange={(e) => { setSshPort(e.target.value); setSshCheckStatus("idle"); }}
+                        placeholder="22"
+                        disabled={newConversationCreating || sshCheckStatus === "checking"}
+                      />
+                    </label>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() => onSshConnect().catch(() => {})}
+                      disabled={!sshTarget.trim() || newConversationCreating || sshCheckStatus === "checking"}
+                    >
+                      {sshCheckStatus === "checking" ? "Connecting…" : "Connect"}
+                    </button>
+                  </div>
+                  {sshCheckError ? <div className="modalError" style={{ marginTop: "0.25rem" }}>{sshCheckError}</div> : null}
+                  {sshCheckStatus === "ok" ? <div className="muted" style={{ marginTop: "0.25rem" }}>Connected</div> : null}
                 </div>
-              </div>
+              ) : null}
+
+              {(newConversationSource === "local" || sshCheckStatus === "ok") ? (
+                <div className="field">
+                  <div className="label">{newConversationSource === "ssh" ? "Remote directory" : "Project directory"}</div>
+                  <div className="pickerHeader">
+                    <button
+                      className="button buttonSmall"
+                      type="button"
+                      onClick={() => {
+                        if (homePath) loadPickerPath(homePath).catch(() => {});
+                      }}
+                      disabled={!homePath || pickerLoading || newConversationCreating}
+                    >
+                      Home
+                    </button>
+                    <button
+                      className="button buttonSmall"
+                      type="button"
+                      onClick={() => {
+                        if (pickerParent) loadPickerPath(pickerParent).catch(() => {});
+                      }}
+                      disabled={!pickerParent || pickerLoading || newConversationCreating}
+                    >
+                      Up
+                    </button>
+                    <div className="pickerPath">{pickerPath ?? "Loading…"}</div>
+                  </div>
+
+                  <div className="pickerList">
+                    {pickerLoading ? <div className="muted">Loading…</div> : null}
+                    {pickerEntries.map((entry) => {
+                      const isOpenable = entry.kind === "dir" || entry.kind === "symlink";
+                      return (
+                        <button
+                          key={entry.path}
+                          type="button"
+                          className={isOpenable ? "pickerEntry" : "pickerEntry pickerEntryDisabled"}
+                          onClick={() => {
+                            if (isOpenable) loadPickerPath(entry.path).catch(() => {});
+                          }}
+                          disabled={!isOpenable || pickerLoading || newConversationCreating}
+                          title={entry.path}
+                        >
+                          <span className="pickerEntryName">{entry.name}</span>
+                          <span className="pickerEntryKind">{entry.kind}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="modalFooter">
-              <div className="muted">{pickerPath ? `Selected: ${pickerPath}` : ""}</div>
+              <div className="muted">{pickerPath ? `Selected: ${newConversationSource === "ssh" ? `${sshTarget}:` : ""}${pickerPath}` : ""}</div>
               <button
                 className="button"
                 type="button"

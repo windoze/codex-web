@@ -2,10 +2,18 @@ export type Uuid = string;
 
 export type ConversationTool = "codex" | "claude-code";
 
+export type ProjectKind = "local" | "ssh";
+
 export type Project = {
   id: Uuid;
   name: string;
+  kind: ProjectKind;
   root_path: string;
+  ssh_target?: string;
+  ssh_port?: number;
+  remote_root_path?: string;
+  ssh_identity_file?: string;
+  ssh_known_hosts_policy?: string;
   created_at_ms: number;
   updated_at_ms: number;
 };
@@ -172,7 +180,20 @@ export function listProjects(): Promise<Project[]> {
 export function createProject(rootPath: string, name?: string): Promise<Project> {
   return jsonFetch<Project>("/api/projects", {
     method: "POST",
-    body: JSON.stringify({ root_path: rootPath, name }),
+    body: JSON.stringify({ kind: "local", root_path: rootPath, name }),
+  });
+}
+
+export function createSshProject(opts: {
+  ssh_target: string;
+  ssh_port?: number;
+  remote_root_path: string;
+  name?: string;
+  ssh_identity_file?: string;
+}): Promise<Project> {
+  return jsonFetch<Project>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify({ kind: "ssh", ...opts }),
   });
 }
 
@@ -245,4 +266,53 @@ export function fsHome(): Promise<{ path: string }> {
 export function fsList(path: string): Promise<FsListResponse> {
   const params = new URLSearchParams({ path });
   return jsonFetch<FsListResponse>(`/api/fs/list?${params.toString()}`);
+}
+
+// ---------------------------------------------------------------------------
+// SSH remote filesystem and connectivity
+// ---------------------------------------------------------------------------
+
+export type SshFsEntry = {
+  name: string;
+  path: string;
+  kind: string;
+};
+
+export type SshFsListResponse = {
+  path: string;
+  parent: string | null;
+  entries: SshFsEntry[];
+};
+
+export type SshCheckResponse = {
+  ok: boolean;
+  remote_user: string;
+  remote_home: string;
+  codex_found: boolean;
+};
+
+export function sshFsHome(sshTarget: string, sshPort?: number): Promise<{ path: string }> {
+  const params = new URLSearchParams({ ssh_target: sshTarget });
+  if (sshPort) params.set("ssh_port", String(sshPort));
+  return jsonFetch<{ path: string }>(`/api/ssh/fs/home?${params.toString()}`);
+}
+
+export function sshFsList(
+  sshTarget: string,
+  path: string,
+  sshPort?: number,
+): Promise<SshFsListResponse> {
+  const params = new URLSearchParams({ ssh_target: sshTarget, path });
+  if (sshPort) params.set("ssh_port", String(sshPort));
+  return jsonFetch<SshFsListResponse>(`/api/ssh/fs/list?${params.toString()}`);
+}
+
+export function sshCheck(
+  sshTarget: string,
+  sshPort?: number,
+): Promise<SshCheckResponse> {
+  return jsonFetch<SshCheckResponse>("/api/ssh/check", {
+    method: "POST",
+    body: JSON.stringify({ ssh_target: sshTarget, ssh_port: sshPort }),
+  });
 }
