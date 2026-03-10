@@ -682,6 +682,7 @@ export default function App() {
   const [showRawMessages, setShowRawMessages] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown menu when clicking outside
@@ -690,6 +691,7 @@ export default function App() {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpenId(null);
+        setMenuPosition(null);
       }
     }
     document.addEventListener("mousedown", handleClick);
@@ -1550,15 +1552,22 @@ export default function App() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setMenuOpenId(menuOpenId === c.id ? null : c.id);
+                    if (menuOpenId === c.id) {
+                      setMenuOpenId(null);
+                      setMenuPosition(null);
+                    } else {
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setMenuPosition({ top: rect.bottom, right: window.innerWidth - rect.right });
+                      setMenuOpenId(c.id);
+                    }
                   }}
                   aria-label="More actions"
                   title="More actions"
                 >
                   &hellip;
                 </button>
-                {menuOpenId === c.id ? (
-                  <div className="dropdownMenu">
+                {menuOpenId === c.id && menuPosition ? (
+                  <div className="dropdownMenu" style={{ position: "fixed", top: menuPosition.top, right: menuPosition.right }}>
                     <button
                       className="dropdownItem"
                       type="button"

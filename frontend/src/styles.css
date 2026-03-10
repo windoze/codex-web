@@ -249,9 +249,7 @@ body {
 }
 
 .dropdownMenu {
-  position: absolute;
-  right: 4px;
-  top: 100%;
+  position: fixed;
   z-index: 100;
   min-width: 140px;
   background: rgba(255, 255, 255, 0.98);
