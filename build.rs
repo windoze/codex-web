@@ -46,14 +46,14 @@ fn main() {
     let node_modules = frontend_dir.join("node_modules");
     if !node_modules.exists() {
         run(
-            Command::new("npm").arg("ci").current_dir(&frontend_dir),
+            npm_command().arg("ci").current_dir(&frontend_dir),
             "npm ci",
         );
     }
 
     // Build the production bundle into `frontend/dist`.
     run(
-        Command::new("npm")
+        npm_command()
             .args(["run", "build"])
             .current_dir(&frontend_dir),
         "npm run build",
@@ -70,6 +70,16 @@ fn ensure_dist_exists(dist_dir: &Path) {
             dist_dir.display(),
             index.display()
         );
+    }
+}
+
+fn npm_command() -> Command {
+    if cfg!(windows) {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "npm"]);
+        cmd
+    } else {
+        Command::new("npm")
     }
 }
 
